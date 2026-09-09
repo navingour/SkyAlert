@@ -94,6 +94,74 @@ class Collector:
             except Exception:
                 pass
 
+    # ── route enrichment (throttled, missing routes only) ──────────
+    def _enrich_missing_routes(self, limit: int = 5):
+        conn = db.connect()
+        cur = conn.cursor()
+        ph = db.placeholder
+        try:
+            cur.execute(
+                f"""SELECT ds.id AS session_id, a.icao_hex, a.callsign 
+                    FROM detection_sessions ds
+                    JOIN aircraft a ON ds.aircraft_id = a.id
+                    WHERE ds.ended_at IS NULL 
+                      AND (
+                          ds.origin_iata IS NULL
+                          OR ds.origin_icao IS NULL
+                          OR ds.destination_iata IS NULL
+                          OR ds.destination_icao IS NULL
+                      )
+                      AND a.callsign IS NOT NULL AND a.callsign != ''
+                    ORDER BY ds.id DESC LIMIT {int(limit)}"""
+            )
+            rows = cur.fetchall()
+            for r in rows:
+                session_id = r["session_id"] if isinstance(r, dict) else r[0]
+                hex_code = r["icao_hex"] if isinstance(r, dict) else r[1]
+                callsign = r["callsign"] if isinstance(r, dict) else r[2]
+                
+                route = enricher.resolve_route(callsign, hex_code)
+                if not route:
+                    continue
+                
+                # Check if route has origin/dest
+                if not route.get("origin_iata") and not route.get("origin_icao"):
+                    continue
+
+                cur.execute(
+                    f"""UPDATE detection_sessions SET
+                        origin_iata = COALESCE({ph}, origin_iata),
+                        origin_icao = COALESCE({ph}, origin_icao),
+                        destination_iata = COALESCE({ph}, destination_iata),
+                        destination_icao = COALESCE({ph}, destination_icao),
+                        origin_name = COALESCE({ph}, origin_name),
+                        origin_city = COALESCE({ph}, origin_city),
+                        origin_country = COALESCE({ph}, origin_country),
+                        destination_name = COALESCE({ph}, destination_name),
+                        destination_city = COALESCE({ph}, destination_city),
+                        destination_country = COALESCE({ph}, destination_country)
+                        WHERE id = {ph}""",
+                    (
+                        route.get("origin_iata"), route.get("origin_icao"),
+                        route.get("destination_iata"), route.get("destination_icao"),
+                        route.get("origin_name"), route.get("origin_city"), route.get("origin_country"),
+                        route.get("destination_name"), route.get("destination_city"), route.get("destination_country"),
+                        session_id
+                    )
+                )
+            conn.commit()
+        except Exception as e:
+            logger.debug("missing routes enrichment pass failed: %s", e)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
     # ── persistence ────────────────────────────────────────────────
     def _upsert_aircraft(self, cur, ph: str, plane: Dict[str, Any], now: str) -> int:
         hex_code = (plane.get("hex") or "").strip().upper()
@@ -272,6 +340,7 @@ class Collector:
             # Throttled identity enrichment for unknown airframes (every 6th poll).
             if self.stats["polls"] % 6 == 0:
                 self._enrich_unknown_identities()
+                self._enrich_missing_routes()
             time.sleep(self.poll)
 
     def start(self):

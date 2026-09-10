@@ -162,6 +162,40 @@ class Collector:
             except Exception:
                 pass
 
+    # ── cleanup (stale sessions) ───────────────────────────────────
+    def _cleanup_stale_sessions(self):
+        """Closes sessions for aircraft that dropped off the radar and never reappeared."""
+        now_dt = datetime.now(timezone.utc)
+        conn = db.connect()
+        cur = conn.cursor()
+        ph = db.placeholder
+        try:
+            cur.execute("SELECT id, last_observed_at FROM detection_sessions WHERE ended_at IS NULL")
+            rows = cur.fetchall()
+            for r in rows:
+                sid = r["id"] if isinstance(r, dict) else r[0]
+                last = r["last_observed_at"] if isinstance(r, dict) else r[1]
+                try:
+                    last_dt = datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+                    if last_dt.tzinfo is None:
+                        last_dt = last_dt.replace(tzinfo=timezone.utc)
+                    if now_dt - last_dt > self.gap:
+                        cur.execute(f"UPDATE detection_sessions SET ended_at = {ph} WHERE id = {ph}", (last, sid))
+                except Exception:
+                    pass
+            conn.commit()
+        except Exception as e:
+            logger.debug("cleanup stale sessions failed: %s", e)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
     # ── persistence ────────────────────────────────────────────────
     def _upsert_aircraft(self, cur, ph: str, plane: Dict[str, Any], now: str) -> int:
         hex_code = (plane.get("hex") or "").strip().upper()
@@ -339,6 +373,7 @@ class Collector:
             self.stats["last_poll"] = utc_now_iso()
             # Throttled identity enrichment for unknown airframes (every 6th poll).
             if self.stats["polls"] % 6 == 0:
+                self._cleanup_stale_sessions()
                 self._enrich_unknown_identities()
                 self._enrich_missing_routes()
             time.sleep(self.poll)

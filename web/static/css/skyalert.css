@@ -1184,19 +1184,23 @@ a:hover {
 }
 
 .rare-summary-card {
-  background-color: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 0.8) 100%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: var(--radius-md);
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  transition: transform 0.15s ease, border-color 0.15s ease;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .rare-summary-card:hover {
-  transform: translateY(-2px);
-  border-color: var(--border-accent);
+  transform: translateY(-4px) scale(1.02);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
 }
 
 .rare-sum-title {
@@ -1497,31 +1501,40 @@ a:hover {
 
 /* ─── Rare Aircraft Card v2 ─────────────────────────────── */
 .rare-card-v2 {
-    background: var(--bg-card);
-    border: 1px solid var(--border-subtle);
-    border-left-width: 3px;
-    border-radius: var(--radius-md);
-    padding: 14px;
+    background: linear-gradient(145deg, rgba(30, 41, 59, 0.6) 0%, rgba(15, 23, 42, 0.95) 100%);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-left-width: 4px;
+    border-radius: 12px;
+    padding: 16px;
     cursor: pointer;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    gap: 12px;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     position: relative;
     overflow: hidden;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
 }
 
 .rare-card-v2::before {
     content: '';
     position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, rgba(255,255,255,0.015) 0%, transparent 60%);
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 100%;
+    background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, transparent 50%);
     pointer-events: none;
+    z-index: 1;
 }
 
 .rare-card-v2:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+    transform: translateY(-5px) scale(1.015);
+    border-color: rgba(255,255,255,0.2);
+    box-shadow: 0 12px 30px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.1);
+    border-left-width: 6px;
 }
 
 /* Top row: callsign + badge */

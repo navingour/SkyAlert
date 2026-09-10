@@ -1,11 +1,72 @@
+# SkyAlert Configuration
+# ─────────────────────────────────────────────────────────────────────────
+# INSTRUCTIONS:
+#   1. Copy this file to config/config.yaml
+#      cp config/config.example.yaml config/config.yaml
+#   2. Fill in your values below.
+#   3. config/config.yaml is excluded from git (.gitignore) to protect secrets.
+# ─────────────────────────────────────────────────────────────────────────
+
 general:
-  poll_interval: 15
+  # How often (in seconds) the backend polls your ADS-B receiver
+  poll_interval: 20
 
 tar1090:
-  url: "http://localhost/tar1090/data/aircraft.json"
+  # URL to your tar1090 aircraft.json feed
+  # Example: http://192.168.1.100/tar1090/data/aircraft.json
+  url: http://YOUR_RECEIVER_IP/tar1090/data/aircraft.json
 
 telegram:
-  enabled: true
-  bot_token: "YOUR_REAL_TOKEN"
-  chat_id: "YOUR_REAL_CHAT_ID"
+  enabled: false          # Set to true to enable Telegram alerts
+  bot_token: ""           # Your Telegram Bot API token
+  chat_id: ""             # Your Telegram chat/group ID
 
+alerts:
+  squawk: true            # Alert on emergency squawk codes (7500/7600/7700)
+  emergency: false
+  military: false
+  government: false
+  police: false
+  rare_aircraft: false
+  watchlist: false
+
+rare_aircraft:
+  aircraft_types:
+    - A388   # Airbus A380
+    - A124   # Antonov An-124
+    - A225   # Antonov An-225 Mriya
+    - B748   # Boeing 747-8F
+    - B744   # Boeing 747-400
+    - BLCF   # Beluga XL
+    - A3ST   # Airbus Beluga
+    - C17    # C-17 Globemaster
+    - C5M    # C-5M Super Galaxy
+    - C130   # C-130 Hercules
+    - E3TF   # E-3 Sentry AWACS
+    - P8     # P-8 Poseidon
+
+watchlist:
+  registrations: []    # e.g. ["VT-ALJ", "N1"]
+  operators:
+    - Indian Air Force
+    - NASA
+  flights:             # Callsign prefixes to watch
+    - RCH
+    - IAF
+  hex: []              # ICAO hex codes e.g. ["400000"]
+
+providers:
+  hexdb:
+    enabled: true
+  airframes:
+    enabled: true
+    api_key: ""        # Optional: airframes.io API key
+  airlabs:
+    enabled: false
+    api_key: ""        # Optional: airlabs.co API key
+
+# Optional: Station location for distance/bearing calculations
+# station:
+#   latitude: 22.5726
+#   longitude: 88.3639
+#   name: "My SkyAlert Station"

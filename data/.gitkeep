@@ -1,0 +1,3 @@
+# This file intentionally left blank.
+# It exists to ensure the data/ directory is tracked by git.
+# Your actual database files (.db) are excluded via .gitignore.

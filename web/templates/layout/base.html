@@ -84,6 +84,11 @@
                 <span>Rare Aircraft</span>
             </a>
 
+            <a class="sky-nav-link" data-nav-target="alerts-history">
+                <span class="icon">🚨</span>
+                <span>Alert History</span>
+            </a>
+
             <div class="sky-nav-category">Analytics & System</div>
 
             <a class="sky-nav-link" data-nav-target="analytics">
@@ -425,7 +430,15 @@
 
             <!-- 7. GLOBAL ANALYTICS VIEW -->
             <section class="view-section" id="view-analytics">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div class="sky-panel traffic-chart-panel" style="margin-bottom: 20px;">
+                    <div class="sky-panel-header">
+                        <span class="sky-panel-title">📈 24-Hour Traffic & Session Volume</span>
+                    </div>
+                    <div class="sky-panel-body" style="padding: 15px; background: rgba(15, 23, 42, 0.4); min-height: 250px;">
+                        <canvas id="analytics-traffic-chart"></canvas>
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; flex-wrap: wrap;">
                     <!-- Top Operators Table -->
                     <div class="sky-panel">
                         <div class="sky-panel-header">
@@ -483,25 +496,116 @@
                     </div>
                 </div>
             </section>
-            <!-- Weather Analytics View -->
-            <section class="view-section" id="view-weather">
+            <!-- Alerts History View -->
+            <section class="view-section" id="view-alerts-history">
                 <div class="sky-panel">
-                    <div class="sky-panel-header">
-                        <span class="sky-panel-title">🌡️ Weather Analytics</span>
+                    <div class="sky-panel-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <span class="sky-panel-title">🚨 Alert History & Logs Dashboard</span>
+                        <button class="sky-btn sky-btn-primary" onclick="window.SkyAlertApp.loadAlertsHistoryView()">
+                            <i class="fas fa-sync"></i> Refresh Logs
+                        </button>
                     </div>
                     <div class="sky-panel-body">
-                        <p>Upper‑air thermal profiles (OAT/TAT) and wind shear vectors will be displayed here.</p>
+                        <div class="table-responsive">
+                            <table class="sky-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date / Time</th>
+                                        <th>Level</th>
+                                        <th>Alert Title</th>
+                                        <th>Aircraft Identity</th>
+                                        <th>Coordinates</th>
+                                        <th>Details</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="alerts-history-table">
+                                    <!-- Dynamic -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Weather Analytics View -->
+            <section class="view-section" id="view-weather">
+                <div class="sky-panel" style="margin-bottom: 20px;">
+                    <div class="sky-panel-header">
+                        <span class="sky-panel-title">🌡️ Live Upper-Air Weather Analytics</span>
+                    </div>
+                    <div class="sky-panel-body">
+                        <!-- Summary Cards -->
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px;">
+                            <div style="background: var(--bg-secondary); padding: 16px; border-radius: 8px; border: 1px solid var(--border-subtle); text-align: center;">
+                                <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 8px;">Transmitting Aircraft</div>
+                                <div id="wx-ac-count" style="font-size: 28px; font-weight: 800; font-family: var(--font-mono); color: var(--radar-cyan);">0</div>
+                            </div>
+                            <div style="background: var(--bg-secondary); padding: 16px; border-radius: 8px; border: 1px solid var(--border-subtle); text-align: center;">
+                                <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 8px;">Max Wind Speed</div>
+                                <div id="wx-max-wind" style="font-size: 28px; font-weight: 800; font-family: var(--font-mono); color: #f59e0b;">-- km/h</div>
+                            </div>
+                            <div style="background: var(--bg-secondary); padding: 16px; border-radius: 8px; border: 1px solid var(--border-subtle); text-align: center;">
+                                <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 8px;">Lowest Temperature</div>
+                                <div id="wx-min-temp" style="font-size: 28px; font-weight: 800; font-family: var(--font-mono); color: #3b82f6;">-- °C</div>
+                            </div>
+                        </div>
+
+                        <!-- Charts Grid -->
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
+                            <div style="background: var(--bg-secondary); padding: 16px; border-radius: 8px; border: 1px solid var(--border-subtle);">
+                                <h3 style="margin-top: 0; margin-bottom: 16px; font-size: 14px; color: var(--text-secondary); text-align: center;">Thermal Profile (°C vs Altitude)</h3>
+                                <div style="position: relative; height: 400px;">
+                                    <canvas id="wx-thermal-chart"></canvas>
+                                </div>
+                            </div>
+                            <div style="background: var(--bg-secondary); padding: 16px; border-radius: 8px; border: 1px solid var(--border-subtle);">
+                                <h3 style="margin-top: 0; margin-bottom: 16px; font-size: 14px; color: var(--text-secondary); text-align: center;">Wind Shear Profile (km/h vs Altitude)</h3>
+                                <div style="position: relative; height: 400px;">
+                                    <canvas id="wx-wind-chart"></canvas>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
             <!-- Receiver Analytics View -->
             <section class="view-section" id="view-receiver">
-                <div class="sky-panel">
+                <div class="sky-panel" style="margin-bottom: 20px;">
                     <div class="sky-panel-header">
-                        <span class="sky-panel-title">📡 Receiver Analytics</span>
+                        <span class="sky-panel-title">📡 Receiver & Signal Analytics</span>
                     </div>
                     <div class="sky-panel-body">
-                        <p>Signal horizon map and ADS‑B quality metrics will be displayed here.</p>
+                        <!-- Summary Cards -->
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px;">
+                            <div style="background: var(--bg-secondary); padding: 16px; border-radius: 8px; border: 1px solid var(--border-subtle); text-align: center;">
+                                <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 8px;">Max Range Detected</div>
+                                <div id="rx-max-range" style="font-size: 28px; font-weight: 800; font-family: var(--font-mono); color: var(--radar-cyan);">0 km</div>
+                            </div>
+                            <div style="background: var(--bg-secondary); padding: 16px; border-radius: 8px; border: 1px solid var(--border-subtle); text-align: center;">
+                                <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 8px;">Average RSSI</div>
+                                <div id="rx-avg-rssi" style="font-size: 28px; font-weight: 800; font-family: var(--font-mono); color: #f59e0b;">-- dBFS</div>
+                            </div>
+                            <div style="background: var(--bg-secondary); padding: 16px; border-radius: 8px; border: 1px solid var(--border-subtle); text-align: center;">
+                                <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 8px;">Tracked Planes</div>
+                                <div id="rx-total-planes" style="font-size: 28px; font-weight: 800; font-family: var(--font-mono); color: #10b981;">0</div>
+                            </div>
+                        </div>
+
+                        <!-- Charts Grid -->
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
+                            <div style="background: var(--bg-secondary); padding: 16px; border-radius: 8px; border: 1px solid var(--border-subtle);">
+                                <h3 style="margin-top: 0; margin-bottom: 16px; font-size: 14px; color: var(--text-secondary); text-align: center;">Signal Horizon Map (Max km)</h3>
+                                <div style="position: relative; height: 400px; display: flex; justify-content: center; align-items: center;">
+                                    <canvas id="rx-horizon-chart"></canvas>
+                                </div>
+                            </div>
+                            <div style="background: var(--bg-secondary); padding: 16px; border-radius: 8px; border: 1px solid var(--border-subtle);">
+                                <h3 style="margin-top: 0; margin-bottom: 16px; font-size: 14px; color: var(--text-secondary); text-align: center;">Signal Attenuation Curve (RSSI vs Distance)</h3>
+                                <div style="position: relative; height: 400px;">
+                                    <canvas id="rx-rssi-chart"></canvas>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>

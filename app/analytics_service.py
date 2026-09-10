@@ -683,23 +683,42 @@ class AnalyticsService:
     def get_operator_analytics(self, limit: int = 50) -> List[Dict[str, Any]]:
         conn = db_manager.get_connection()
         cur = conn.cursor()
-
         cur.execute("""
-        SELECT
-            COALESCE(NULLIF(e.operator_name, ''), NULLIF(a.operator, ''), 'Unknown Operator') as op_name,
-            e.operator_icao,
-            e.country,
-            COUNT(DISTINCT a.id) as aircraft_count,
-            COUNT(DISTINCT CASE WHEN a.callsign IS NOT NULL AND a.callsign != '-' THEN a.callsign ELSE a.registration END) as unique_flights,
-            COALESCE(SUM(a.total_sessions), 0) as total_visits,
-            COALESCE(SUM(a.total_observations), 0) as total_observations,
-            COALESCE(AVG(strftime('%s', COALESCE(s.ended_at, s.last_observed_at)) - strftime('%s', s.started_at)), 600) as avg_duration_sec
-        FROM aircraft a
-        LEFT JOIN aircraft_enrichment e ON a.id = e.aircraft_id
-        LEFT JOIN detection_sessions s ON a.id = s.aircraft_id
-        GROUP BY op_name
-        HAVING op_name != 'Unknown Operator'
-        ORDER BY total_visits DESC, aircraft_count DESC
+        WITH op_stats AS (
+            SELECT 
+                COALESCE(NULLIF(e.operator_name, ''), NULLIF(a.operator, ''), 'Unknown Operator') as op_name,
+                MAX(e.operator_icao) as operator_icao,
+                MAX(e.country) as country,
+                COUNT(DISTINCT a.id) as aircraft_count,
+                COUNT(DISTINCT CASE WHEN a.callsign IS NOT NULL AND a.callsign != '-' THEN a.callsign ELSE a.registration END) as unique_flights,
+                COALESCE(SUM(a.total_sessions), 0) as total_visits,
+                COALESCE(SUM(a.total_observations), 0) as total_observations
+            FROM aircraft a
+            LEFT JOIN aircraft_enrichment e ON a.id = e.aircraft_id
+            GROUP BY op_name
+        ),
+        session_stats AS (
+            SELECT 
+                COALESCE(NULLIF(e.operator_name, ''), NULLIF(a.operator, ''), 'Unknown Operator') as op_name,
+                AVG(strftime('%s', COALESCE(s.ended_at, s.last_observed_at)) - strftime('%s', s.started_at)) as avg_duration_sec
+            FROM detection_sessions s
+            JOIN aircraft a ON s.aircraft_id = a.id
+            LEFT JOIN aircraft_enrichment e ON a.id = e.aircraft_id
+            GROUP BY op_name
+        )
+        SELECT 
+            o.op_name,
+            o.operator_icao,
+            o.country,
+            o.aircraft_count,
+            o.unique_flights,
+            o.total_visits,
+            o.total_observations,
+            COALESCE(s.avg_duration_sec, 600) as avg_duration_sec
+        FROM op_stats o
+        LEFT JOIN session_stats s ON o.op_name = s.op_name
+        WHERE o.op_name != 'Unknown Operator'
+        ORDER BY o.total_visits DESC, o.aircraft_count DESC
         LIMIT ?
         """, (limit,))
 

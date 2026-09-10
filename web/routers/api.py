@@ -13,11 +13,13 @@ IST_TZ = timezone(timedelta(hours=5, minutes=30))
 from app.skyalert_remote_client import skyalert_remote
 from app.analytics_service import format_ist_datetime, format_duration, analytics_service
 from app.alert_lookup import AlertLookup
+from app.event_database import EventDatabase
 from app.aircraft_enricher import aircraft_enricher
 from web.services.config_manager import config_manager
 from web.services.status_service import status_service
 
 alert_lookup = AlertLookup()
+event_database = EventDatabase()
 logger = logging.getLogger("skyalert.api")
 router = APIRouter(prefix="/api")
 
@@ -289,21 +291,22 @@ async def get_aircraft_profile(id_or_hex: str):
 
     if live_match:
         profile["status"] = "LIVE"
+        
+        callsign = (live_match.get("callsign") or profile.get("callsign") or "-").strip().upper()
+        route = live_match.get("route")
+        if not route and callsign and callsign != "-":
+            route = await get_adsbdb_route_async(callsign, hex_u)
+            
+        o_iata = route.get("origin_iata") if route else None
+        o_icao = route.get("origin_icao") if route else None
+        d_iata = route.get("destination_iata") if route else None
+        d_icao = route.get("destination_icao") if route else None
+        
+        orig_str = o_iata if o_iata else (o_icao if o_icao else "Unknown")
+        dest_str = d_iata if d_iata else (d_icao if d_icao else "Unknown")
+        route_short = f"{orig_str} → {dest_str}" if (o_iata or o_icao or d_iata or d_icao) else "Route unavailable"
+
         if not profile.get("current_session"):
-            callsign = (live_match.get("callsign") or profile.get("callsign") or "-").strip().upper()
-            route = live_match.get("route")
-            if not route and callsign and callsign != "-":
-                route = await get_adsbdb_route_async(callsign, hex_u)
-            
-            o_iata = route.get("origin_iata") if route else None
-            o_icao = route.get("origin_icao") if route else None
-            d_iata = route.get("destination_iata") if route else None
-            d_icao = route.get("destination_icao") if route else None
-            
-            orig_str = o_iata if o_iata else (o_icao if o_icao else "Unknown")
-            dest_str = d_iata if d_iata else (d_icao if d_icao else "Unknown")
-            route_short = f"{orig_str} → {dest_str}" if (o_iata or o_icao or d_iata or d_icao) else "Route unavailable"
-            
             profile["current_session"] = {
                 "id": "LIVE",
                 "callsign": callsign,
@@ -318,6 +321,19 @@ async def get_aircraft_profile(id_or_hex: str):
                 "observation_count": live_match.get("messages") or live_match.get("total_observations") or 1,
                 "status": "LIVE"
             }
+        else:
+            # If the session exists in DB but lacks route data, patch it with live data
+            cs = profile["current_session"]
+            if cs.get("route_short", "Route unavailable") == "Route unavailable" or not cs.get("origin_iata"):
+                cs.update({
+                    "origin_iata": o_iata,
+                    "origin_icao": o_icao,
+                    "destination_iata": d_iata,
+                    "destination_icao": d_icao,
+                    "origin_display": orig_str,
+                    "destination_display": dest_str,
+                    "route_short": route_short
+                })
 
     # Attach and enrich detection sessions with route data
     db_sessions = analytics_service.get_aircraft_db_sessions(id_or_hex)
@@ -1013,12 +1029,92 @@ async def get_unknown_aircraft(limit: int = 50):
 
 @router.post("/aircraft/{id_or_hex}/enrich")
 async def trigger_enrichment(id_or_hex: str):
-    """Trigger aircraft enrichment."""
-    return JSONResponse({
-        "status": "success",
-        "hex": id_or_hex,
-        "message": "Enrichment request queued for SkyAlert backend"
-    })
+    """Trigger aircraft enrichment via AirLabs."""
+    try:
+        from app.config import load_config
+        from app.backend.db import DatabaseManager
+        import httpx
+        
+        config = load_config()
+        api_key = config.get("providers", {}).get("airlabs", {}).get("api_key")
+        
+        if not api_key:
+            return JSONResponse({"status": "error", "message": "AirLabs API key not configured"})
+
+        # Get DB manager
+        db = DatabaseManager()
+        
+        # 1. Ensure aircraft exists in DB to get ac_id
+        ac_id = db.upsert_aircraft(id_or_hex)
+
+        enrich_data = {}
+        route_data = {}
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # 2. Fetch Fleets (Aircraft DB)
+            fleet_url = f"https://airlabs.co/api/v9/fleets?hex={id_or_hex}&api_key={api_key}"
+            fleet_res = await client.get(fleet_url)
+            if fleet_res.status_code == 200:
+                fleet_json = fleet_res.json().get("response", [])
+                if fleet_json and len(fleet_json) > 0:
+                    f = fleet_json[0]
+                    enrich_data = {
+                        "registration": f.get("reg_number"),
+                        "aircraft_type": f.get("icao_code") or f.get("iata_code"),
+                        "manufacturer": f.get("manufacturer"),
+                        "model": f.get("model", f.get("name")), 
+                        "operator_name": f.get("airline_name") or f.get("airline_id"),
+                        "operator_icao": f.get("airline_icao"),
+                        "operator_iata": f.get("airline_iata"),
+                        "country": f.get("country_code"),
+                        "source": "AirLabs API",
+                        "source_url": "https://airlabs.co",
+                        "serial_number": f.get("msn"),
+                        "type_code": f.get("iata_code"),
+                        "icao_aircraft_type": f.get("icao_code"),
+                        "built": str(f.get("built")) if f.get("built") else None,
+                        "first_flight_date": f.get("first_flight"),
+                    }
+                    
+            # 3. Fetch Live Flight (Route)
+            flight_url = f"https://airlabs.co/api/v9/flights?hex={id_or_hex}&api_key={api_key}"
+            flight_res = await client.get(flight_url)
+            if flight_res.status_code == 200:
+                flight_json = flight_res.json().get("response", [])
+                if flight_json and len(flight_json) > 0:
+                    fl = flight_json[0]
+                    route_data = {
+                        "origin_iata": fl.get("dep_iata"),
+                        "origin_icao": fl.get("dep_icao"),
+                        "destination_iata": fl.get("arr_iata"),
+                        "destination_icao": fl.get("arr_icao")
+                    }
+                    if not enrich_data.get("operator_name") and fl.get("airline_iata"):
+                        enrich_data["operator_iata"] = fl.get("airline_iata")
+                        enrich_data["operator_icao"] = fl.get("airline_icao")
+                        enrich_data["registration"] = enrich_data.get("registration") or fl.get("reg_number")
+
+        # 4. Save to DB
+        if enrich_data:
+            db.upsert_enrichment(ac_id, enrich_data)
+            
+        if route_data and (route_data.get("origin_icao") or route_data.get("origin_iata")):
+            session_id = db.get_active_session(ac_id)
+            if session_id:
+                db.update_session_route(session_id, route_data)
+
+        return JSONResponse({
+            "status": "success",
+            "hex": id_or_hex,
+            "message": "Successfully refreshed enrichment data from AirLabs."
+        })
+
+    except Exception as e:
+        logger.exception("Error triggering AirLabs enrichment")
+        return JSONResponse({
+            "status": "error",
+            "message": f"Enrichment failed: {str(e)}"
+        })
 
 @router.get("/alerts")
 async def get_alerts_history(limit: int = 100):
@@ -1112,5 +1208,14 @@ async def get_aircraft_replay(id_or_hex: str):
             "count": len(coords),
             "trajectory": coords
         })
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@router.get("/alerts/history")
+async def get_alerts_history(limit: int = 200):
+    """Returns a historical array of triggered alerts."""
+    try:
+        alerts = event_database.latest(limit=limit)
+        return JSONResponse({"alerts": alerts})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)

@@ -1,31 +1,54 @@
+# ────────────────────────────────────────────────
 # Python
+# ────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
+*.pyc
+.pytest_cache/
 
-# Virtual Environment
+# ────────────────────────────────────────────────
+# Virtual Environments
+# ────────────────────────────────────────────────
+.venv/
 venv/
+env/
 
+# ────────────────────────────────────────────────
+# Databases (never commit live data)
+# ────────────────────────────────────────────────
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/*.sqlite
+data/*.sqlite3
+
+# Keep the data/ directory tracked but empty
+!data/.gitkeep
+
+# ────────────────────────────────────────────────
 # Logs
+# ────────────────────────────────────────────────
 logs/
 *.log
 
-# Databases
-
-data/*.db
-
-
-
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-
-# Local secrets
+# ────────────────────────────────────────────────
+# Secrets & Configuration (use config.example.yaml)
+# ────────────────────────────────────────────────
+config/config.yaml
 .env
 .env.*
 
-# Local Config	
-config/config.yaml
+# ────────────────────────────────────────────────
+# OS & Editor
+# ────────────────────────────────────────────────
+.DS_Store
+.vscode/
+.idea/
+Thumbs.db
+
+# ────────────────────────────────────────────────
+# Misc project artefacts
+# ────────────────────────────────────────────────
+nano
+*.bak

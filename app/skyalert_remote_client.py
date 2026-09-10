@@ -465,14 +465,77 @@ class SkyAlertRemoteClient:
             return None
 
     def get_rare_aircraft(self, max_visits: int = 5) -> Dict[str, Any]:
-        """Consumes GET http://192.168.0.118/skyalert/api/rare-aircraft?max_visits={max_visits}."""
-        url = f"{self.base_url}/rare-aircraft"
+        """Queries local database for truly rare aircraft based on config and keywords."""
         try:
-            r = requests.get(url, params={"max_visits": max_visits}, timeout=5)
-            r.raise_for_status()
-            return r.json()
+            from app.db_manager import db_manager
+            from app.config import load_config
+            config = load_config()
+            rare_types = config.get("rare_aircraft", {}).get("aircraft_types", [])
+            wl_ops = config.get("watchlist", {}).get("operators", [])
+            wl_reg = config.get("watchlist", {}).get("registrations", [])
+            wl_hex = config.get("watchlist", {}).get("hex", [])
+            wl_flt = config.get("watchlist", {}).get("flights", [])
+
+            conn = db_manager.get_connection()
+            cur = conn.cursor()
+            
+            cur.execute("""
+                SELECT a.icao_hex, a.callsign, a.registration as a_reg, a.aircraft_type as a_type, a.total_sessions,
+                       e.registration as e_reg, e.aircraft_type as e_type, e.manufacturer, e.model, 
+                       e.operator_name, e.icao_aircraft_type, e.country,
+                       a.last_seen
+                FROM aircraft a
+                LEFT JOIN aircraft_enrichment e ON a.id = e.aircraft_id
+                WHERE a.total_sessions <= ?
+                ORDER BY a.last_seen DESC
+            """, (max_visits,))
+            
+            rows = cur.fetchall()
+            rare_list = []
+            
+            military_keywords = ["AIR FORCE", "NAVY", "ARMY", "COAST GUARD", "NASA", "MILITARY"]
+            
+            for row in rows:
+                hex_c = (row["icao_hex"] or "").upper()
+                callsign = (row["callsign"] or "").upper()
+                reg = (row["e_reg"] or row["a_reg"] or "").upper()
+                ac_type = (row["e_type"] or row["a_type"] or row["icao_aircraft_type"] or "").upper()
+                op = (row["operator_name"] or "").upper()
+                
+                is_rare = False
+                
+                if ac_type and any(t.upper() in ac_type for t in rare_types):
+                    is_rare = True
+                elif any(m in op for m in military_keywords):
+                    is_rare = True
+                elif op and any(wo.upper() in op for wo in wl_ops):
+                    is_rare = True
+                elif reg and reg in [r.upper() for r in wl_reg]:
+                    is_rare = True
+                elif hex_c in [h.upper() for h in wl_hex]:
+                    is_rare = True
+                elif callsign and any(f.upper() in callsign for f in wl_flt):
+                    is_rare = True
+                    
+                if is_rare:
+                    rare_list.append({
+                        "icao_hex": row["icao_hex"],
+                        "callsign": row["callsign"],
+                        "registration": row["e_reg"] or row["a_reg"],
+                        "aircraft_type": row["e_type"] or row["a_type"] or row["icao_aircraft_type"],
+                        "manufacturer": row["manufacturer"],
+                        "model": row["model"],
+                        "operator": row["operator_name"],
+                        "country": row["country"],
+                        "last_seen": row["last_seen"],
+                        "total_sessions": row["total_sessions"]
+                    })
+            
+            conn.close()
+            return {"max_visits": max_visits, "count": len(rare_list), "rare_aircraft": rare_list}
+            
         except Exception as e:
-            logger.error(f"Failed to fetch rare aircraft from {url}: {e}")
+            logger.error(f"Failed to fetch rare aircraft from DB: {e}")
             return {"max_visits": max_visits, "count": 0, "rare_aircraft": []}
 
 skyalert_remote = SkyAlertRemoteClient()

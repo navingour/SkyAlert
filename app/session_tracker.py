@@ -126,33 +126,49 @@ class SessionTracker:
         cur = conn.cursor()
 
         # 1. Fetch or create aircraft in database
-        cur.execute("SELECT id, total_sessions, total_observations FROM aircraft WHERE icao_hex = ?", (hex_code,))
+        cur.execute("SELECT id, operator, total_sessions, total_observations FROM aircraft WHERE icao_hex = ?", (hex_code,))
         ac_row = cur.fetchone()
         
+        # Try to infer operator from callsign
+        inferred_op = None
+        if callsign and callsign != "-":
+            import re
+            from aircraft_enricher import OPERATOR_MAP
+            match = re.match(r"^([A-Z]{3})", callsign.upper())
+            if match and match.group(1) in OPERATOR_MAP:
+                inferred_op = OPERATOR_MAP[match.group(1)][0]
+
         if ac_row:
             ac_id = ac_row[0] if isinstance(ac_row, (tuple, list)) else ac_row["id"]
-            tot_sess = ac_row[1] if isinstance(ac_row, (tuple, list)) else ac_row["total_sessions"]
-            tot_obs = ac_row[2] if isinstance(ac_row, (tuple, list)) else ac_row["total_observations"]
+            curr_op = ac_row[1] if isinstance(ac_row, (tuple, list)) else ac_row["operator"]
             
-            cur.execute("""
+            op_update_sql = ""
+            op_val = []
+            if inferred_op and curr_op in ("Unknown Operator", "-", "", None):
+                op_update_sql = "operator = ?,"
+                op_val = [inferred_op]
+
+            update_params = [callsign, reg, ac_type] + op_val + [now_iso, now_iso, ac_id]
+            
+            cur.execute(f"""
             UPDATE aircraft SET
                 callsign = COALESCE(NULLIF(?, ''), callsign),
                 registration = COALESCE(NULLIF(?, ''), registration),
                 aircraft_type = COALESCE(NULLIF(?, ''), aircraft_type),
+                {op_update_sql}
                 last_seen = ?,
                 total_observations = total_observations + 1,
                 updated_at = ?
             WHERE id = ?
-            """, (callsign, reg, ac_type, now_iso, now_iso, ac_id))
+            """, tuple(update_params))
         else:
+            final_op = inferred_op or 'Unknown Operator'
             cur.execute("""
-            INSERT INTO aircraft (icao_hex, callsign, registration, aircraft_type, first_seen, last_seen, total_sessions, total_observations, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
-            """, (hex_code, callsign, reg, ac_type, now_iso, now_iso, now_iso, now_iso))
+            INSERT INTO aircraft (icao_hex, callsign, registration, aircraft_type, operator, first_seen, last_seen, total_sessions, total_observations, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
+            """, (hex_code, callsign, reg, ac_type, final_op, now_iso, now_iso, now_iso, now_iso))
             cur.execute("SELECT id FROM aircraft WHERE icao_hex = ?", (hex_code,))
             ac_id = cur.fetchone()[0]
-            tot_sess = 1
-            tot_obs = 1
 
         # 2. Check for open / active detection session for this aircraft
         cur.execute("""

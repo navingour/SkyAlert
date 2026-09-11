@@ -137,8 +137,16 @@ class SkyAlertRadarMap {
             const color = this.getAltitudeColor(alt);
             const callsign = (plane.callsign && plane.callsign !== "-") ? plane.callsign : (identity.callsign || live.flight || hex);
             const reg = (plane.registration && plane.registration !== "-") ? plane.registration : (identity.registration || hex);
-            const op = plane.operator || identity.operator || 'Unknown Operator';
-            const model = plane.model || identity.model || plane.aircraft_type || identity.aircraft_type || 'Unknown Type';
+            const opCandidates = [plane.operator, identity.operator, plane.operator_name, identity.operator_name];
+            const validOp = opCandidates.find(o => o && !['Unknown', 'Unknown Operator', 'Commercial Operator', 'In Transit', '-', 'null', 'None', ''].includes(String(o).trim()));
+            const op = validOp || 'Unknown Operator';
+
+            const modelCandidates = [
+                plane.model, identity.model, plane.aircraft_type, identity.aircraft_type,
+                identity.type_code, identity.icao_aircraft_type, live.t, plane.t, plane.description
+            ];
+            const validModel = modelCandidates.find(m => m && !['Unknown', 'Unknown Type', 'Unknown Operator', '-', 'null', 'None', ''].includes(String(m).trim()));
+            const model = validModel || 'Unknown Type';
             const rawSpeed = plane.speed_kts || live.gs || plane.gs;
             const speedStr = rawSpeed ? `${Math.round(rawSpeed * 1.852)} km/h` : (plane.speed_kmh ? `${Math.round(plane.speed_kmh)} km/h` : 'Unknown');
             const distStr = plane.distance_km ? `${plane.distance_km} km` : (live.r_dst ? `${live.r_dst} km` : 'N/A');

@@ -117,6 +117,221 @@ OPERATOR_MAP = {
     'CSZ': ('Shenzhen Airlines', 'China'),
 }
 
+ICAO_TYPE_MAP = {
+    # Airbus
+    "A318": ("Airbus A318", "Airbus"),
+    "A319": ("Airbus A319", "Airbus"),
+    "A320": ("Airbus A320", "Airbus"),
+    "A321": ("Airbus A321", "Airbus"),
+    "A20N": ("Airbus A320neo", "Airbus"),
+    "A21N": ("Airbus A321neo", "Airbus"),
+    "A19N": ("Airbus A319neo", "Airbus"),
+    "A332": ("Airbus A330-200", "Airbus"),
+    "A333": ("Airbus A330-300", "Airbus"),
+    "A338": ("Airbus A330-800neo", "Airbus"),
+    "A339": ("Airbus A330-900neo", "Airbus"),
+    "A342": ("Airbus A340-200", "Airbus"),
+    "A343": ("Airbus A340-300", "Airbus"),
+    "A345": ("Airbus A340-500", "Airbus"),
+    "A346": ("Airbus A340-600", "Airbus"),
+    "A359": ("Airbus A350-900", "Airbus"),
+    "A35K": ("Airbus A350-1000", "Airbus"),
+    "A388": ("Airbus A380-800", "Airbus"),
+    "A220": ("Airbus A220", "Airbus"),
+    "BCS1": ("Airbus A220-100", "Airbus"),
+    "BCS3": ("Airbus A220-300", "Airbus"),
+    "A306": ("Airbus A300-600", "Airbus"),
+    "A30B": ("Airbus A300B4", "Airbus"),
+    "A3ST": ("Airbus Beluga", "Airbus"),
+    "A337": ("Airbus BelugaXL", "Airbus"),
+    "A400": ("Airbus A400M Atlas", "Airbus"),
+
+    # Boeing
+    "B732": ("Boeing 737-200", "Boeing"),
+    "B733": ("Boeing 737-300", "Boeing"),
+    "B734": ("Boeing 737-400", "Boeing"),
+    "B735": ("Boeing 737-500", "Boeing"),
+    "B736": ("Boeing 737-600", "Boeing"),
+    "B737": ("Boeing 737-700", "Boeing"),
+    "B738": ("Boeing 737-800", "Boeing"),
+    "B739": ("Boeing 737-900", "Boeing"),
+    "B38M": ("Boeing 737 MAX 8", "Boeing"),
+    "B39M": ("Boeing 737 MAX 9", "Boeing"),
+    "B37M": ("Boeing 737 MAX 7", "Boeing"),
+    "B3JM": ("Boeing 737 MAX 10", "Boeing"),
+    "B742": ("Boeing 747-200", "Boeing"),
+    "B743": ("Boeing 747-300", "Boeing"),
+    "B744": ("Boeing 747-400", "Boeing"),
+    "B748": ("Boeing 747-8", "Boeing"),
+    "B752": ("Boeing 757-200", "Boeing"),
+    "B753": ("Boeing 757-300", "Boeing"),
+    "B762": ("Boeing 767-200", "Boeing"),
+    "B763": ("Boeing 767-300", "Boeing"),
+    "B764": ("Boeing 767-400", "Boeing"),
+    "B772": ("Boeing 777-200", "Boeing"),
+    "B77L": ("Boeing 777-200LR/F", "Boeing"),
+    "B773": ("Boeing 777-300", "Boeing"),
+    "B77W": ("Boeing 777-300ER", "Boeing"),
+    "B778": ("Boeing 777-8", "Boeing"),
+    "B779": ("Boeing 777-9", "Boeing"),
+    "B788": ("Boeing 787-8 Dreamliner", "Boeing"),
+    "B789": ("Boeing 787-9 Dreamliner", "Boeing"),
+    "B78X": ("Boeing 787-10 Dreamliner", "Boeing"),
+    "C17": ("Boeing C-17 Globemaster III", "Boeing"),
+    "P8": ("Boeing P-8 Poseidon", "Boeing"),
+    "E3TF": ("Boeing E-3 Sentry", "Boeing"),
+    "K35R": ("Boeing KC-135 Stratotanker", "Boeing"),
+    "B52": ("Boeing B-52 Stratofortress", "Boeing"),
+
+    # ATR
+    "AT43": ("ATR 42-300", "ATR"),
+    "AT45": ("ATR 42-500", "ATR"),
+    "AT46": ("ATR 42-600", "ATR"),
+    "AT72": ("ATR 72-200", "ATR"),
+    "AT73": ("ATR 72-210", "ATR"),
+    "AT75": ("ATR 72-500", "ATR"),
+    "AT76": ("ATR 72-600", "ATR"),
+
+    # Bombardier / De Havilland
+    "DH8A": ("De Havilland Dash 8-100", "Bombardier"),
+    "DH8B": ("De Havilland Dash 8-200", "Bombardier"),
+    "DH8C": ("De Havilland Dash 8-300", "Bombardier"),
+    "DH8D": ("De Havilland Dash 8-400 (Q400)", "Bombardier"),
+    "DHC6": ("De Havilland DHC-6 Twin Otter", "De Havilland"),
+    "CRJ1": ("Bombardier CRJ-100", "Bombardier"),
+    "CRJ2": ("Bombardier CRJ-200", "Bombardier"),
+    "CRJ7": ("Bombardier CRJ-700", "Bombardier"),
+    "CRJ9": ("Bombardier CRJ-900", "Bombardier"),
+    "CRJX": ("Bombardier CRJ-1000", "Bombardier"),
+    "CL60": ("Bombardier Challenger 600", "Bombardier"),
+    "CL30": ("Bombardier Challenger 300", "Bombardier"),
+    "CL35": ("Bombardier Challenger 350", "Bombardier"),
+    "GLEX": ("Bombardier Global Express", "Bombardier"),
+    "GL5T": ("Bombardier Global 5000", "Bombardier"),
+    "GL6T": ("Bombardier Global 6000", "Bombardier"),
+    "GL75": ("Bombardier Global 7500", "Bombardier"),
+
+    # Embraer
+    "E120": ("Embraer EMB 120 Brasilia", "Embraer"),
+    "E135": ("Embraer ERJ 135", "Embraer"),
+    "E145": ("Embraer ERJ 145", "Embraer"),
+    "E170": ("Embraer E170", "Embraer"),
+    "E75S": ("Embraer E175 (Short Wing)", "Embraer"),
+    "E75L": ("Embraer E175 (Long Wing)", "Embraer"),
+    "E175": ("Embraer E175", "Embraer"),
+    "E190": ("Embraer E190", "Embraer"),
+    "E195": ("Embraer E195", "Embraer"),
+    "E290": ("Embraer E190-E2", "Embraer"),
+    "E295": ("Embraer E195-E2", "Embraer"),
+    "E50P": ("Embraer Phenom 100", "Embraer"),
+    "E55P": ("Embraer Phenom 300", "Embraer"),
+    "E545": ("Embraer Legacy 450 / Praetor 500", "Embraer"),
+    "E550": ("Embraer Legacy 500 / Praetor 600", "Embraer"),
+    "C390": ("Embraer C-390 Millennium", "Embraer"),
+
+    # Gulfstream
+    "GLF4": ("Gulfstream G-IV / G450", "Gulfstream"),
+    "GLF5": ("Gulfstream G-V / G550", "Gulfstream"),
+    "GLF6": ("Gulfstream G650 / G700", "Gulfstream"),
+    "G150": ("Gulfstream G150", "Gulfstream"),
+    "G280": ("Gulfstream G280", "Gulfstream"),
+    "GA5C": ("Gulfstream G500", "Gulfstream"),
+    "GA6C": ("Gulfstream G600", "Gulfstream"),
+
+    # Dassault
+    "FA7X": ("Dassault Falcon 7X", "Dassault"),
+    "FA8X": ("Dassault Falcon 8X", "Dassault"),
+    "FA50": ("Dassault Falcon 50", "Dassault"),
+    "FA20": ("Dassault Falcon 20", "Dassault"),
+    "F2TH": ("Dassault Falcon 2000", "Dassault"),
+    "F900": ("Dassault Falcon 900", "Dassault"),
+    "RFAL": ("Dassault Rafale", "Dassault"),
+    "MRF1": ("Dassault Mirage F1", "Dassault"),
+    "M200": ("Dassault Mirage 2000", "Dassault"),
+
+    # Cessna / Beechcraft / Textron
+    "C172": ("Cessna 172 Skyhawk", "Cessna"),
+    "C182": ("Cessna 182 Skylane", "Cessna"),
+    "C208": ("Cessna 208 Caravan", "Cessna"),
+    "C510": ("Cessna Citation Mustang", "Cessna"),
+    "C525": ("Cessna CitationJet / CJ1/CJ2/CJ3/CJ4", "Cessna"),
+    "C550": ("Cessna Citation II / Bravo", "Cessna"),
+    "C560": ("Cessna Citation V / Ultra / Encore", "Cessna"),
+    "C56X": ("Cessna Citation Excel / XLS", "Cessna"),
+    "C680": ("Cessna Citation Sovereign", "Cessna"),
+    "C750": ("Cessna Citation X", "Cessna"),
+    "C700": ("Cessna Citation Longitude", "Cessna"),
+    "BE20": ("Beechcraft Super King Air 200", "Beechcraft"),
+    "BE30": ("Beechcraft Super King Air 300", "Beechcraft"),
+    "B350": ("Beechcraft Super King Air 350", "Beechcraft"),
+    "BE90": ("Beechcraft King Air 90", "Beechcraft"),
+    "BE9L": ("Beechcraft King Air 90", "Beechcraft"),
+    "B190": ("Beechcraft 1900", "Beechcraft"),
+    "HA4T": ("Hawker 4000", "Hawker"),
+    "H25B": ("Hawker 800 / 850 / 900", "Hawker"),
+
+    # Pilatus
+    "PC12": ("Pilatus PC-12", "Pilatus"),
+    "PC24": ("Pilatus PC-24", "Pilatus"),
+    "PC7": ("Pilatus PC-7", "Pilatus"),
+
+    # Russian / Antonov / Ilyushin / Tupolev / Sukhoi
+    "IL76": ("Ilyushin Il-76", "Ilyushin"),
+    "IL62": ("Ilyushin Il-62", "Ilyushin"),
+    "IL96": ("Ilyushin Il-96", "Ilyushin"),
+    "AN12": ("Antonov An-12", "Antonov"),
+    "AN24": ("Antonov An-24", "Antonov"),
+    "AN26": ("Antonov An-26", "Antonov"),
+    "AN32": ("Antonov An-32", "Antonov"),
+    "AN72": ("Antonov An-72", "Antonov"),
+    "AN124": ("Antonov An-124 Ruslan", "Antonov"),
+    "AN225": ("Antonov An-225 Mriya", "Antonov"),
+    "TU134": ("Tupolev Tu-134", "Tupolev"),
+    "TU154": ("Tupolev Tu-154", "Tupolev"),
+    "TU204": ("Tupolev Tu-204", "Tupolev"),
+    "SU30": ("Sukhoi Su-30MKI", "Sukhoi"),
+    "SU95": ("Sukhoi Superjet 100", "Sukhoi"),
+    "SSJ1": ("Sukhoi Superjet 100", "Sukhoi"),
+    "MIG29": ("Mikoyan MiG-29", "Mikoyan"),
+
+    # Military & Transports
+    "C130": ("Lockheed C-130 Hercules", "Lockheed Martin"),
+    "C30J": ("Lockheed Martin C-130J Super Hercules", "Lockheed Martin"),
+    "EUFI": ("Eurofighter Typhoon", "Eurofighter"),
+    "DO228": ("Dornier 228", "Dornier"),
+    "D228": ("Dornier 228", "Dornier"),
+
+    # Helicopters
+    "B06": ("Bell 206 JetRanger", "Bell"),
+    "B407": ("Bell 407", "Bell"),
+    "B412": ("Bell 412", "Bell"),
+    "B429": ("Bell 429 GlobalRanger", "Bell"),
+    "EC35": ("Eurocopter EC135 / H135", "Airbus Helicopters"),
+    "EC45": ("Eurocopter EC145 / H145", "Airbus Helicopters"),
+    "AS50": ("Eurocopter AS350 Ecureuil", "Airbus Helicopters"),
+    "AS55": ("Eurocopter AS355 Ecureuil 2", "Airbus Helicopters"),
+    "EC25": ("Eurocopter EC225 Super Puma", "Airbus Helicopters"),
+    "A139": ("AgustaWestland AW139", "Leonardo"),
+    "A169": ("AgustaWestland AW169", "Leonardo"),
+    "A189": ("AgustaWestland AW189", "Leonardo"),
+    "A109": ("AgustaWestland AW109", "Leonardo"),
+    "S76": ("Sikorsky S-76", "Sikorsky"),
+    "S92": ("Sikorsky S-92", "Sikorsky"),
+    "UH60": ("Sikorsky UH-60 Black Hawk", "Sikorsky"),
+    "MI8": ("Mil Mi-8 / Mi-17", "Mil"),
+    "MI17": ("Mil Mi-17", "Mil"),
+}
+
+# Known carrier primary fleets (used when raw ADS-B has not broadcast type message yet)
+FLEET_FALLBACK_MAP = {
+    'AKJ': ('B38M', 'Boeing 737 MAX 8', 'Boeing', 'Akasa Air'),
+    'LLR': ('AT76', 'ATR 72-600', 'ATR', 'Alliance Air'),
+    'FLG': ('AT76', 'ATR 72-600', 'ATR', 'FlyBig'),
+    'SDG': ('E175', 'Embraer E175', 'Embraer', 'Star Air'),
+    'BDA': ('B738', 'Boeing 737-800(BCF)', 'Boeing', 'Blue Dart Aviation'),
+    'ICG': ('DO228', 'Dornier 228', 'Dornier', 'Indian Coast Guard'),
+}
+
 class AircraftEnricher:
     """
     Unified enrichment service aggregating:
@@ -140,13 +355,28 @@ class AircraftEnricher:
             conn = sqlite3.connect(str(RELATIONAL_DB))
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
-            cur.execute("SELECT * FROM aircraft")
+            # Join aircraft and aircraft_enrichment so all metadata is loaded
+            query = """
+            SELECT 
+                a.icao_hex,
+                COALESCE(NULLIF(e.registration, ''), NULLIF(a.registration, '')) as registration,
+                COALESCE(NULLIF(e.icao_aircraft_type, ''), NULLIF(e.type_code, ''), NULLIF(e.aircraft_type, ''), NULLIF(a.aircraft_type, '')) as aircraft_type,
+                COALESCE(NULLIF(e.manufacturer, ''), NULLIF(a.manufacturer, '')) as manufacturer,
+                COALESCE(NULLIF(e.model, ''), NULLIF(a.model, '')) as model,
+                COALESCE(NULLIF(e.operator_name, ''), NULLIF(a.operator, '')) as operator,
+                COALESCE(NULLIF(e.country, ''), '') as country,
+                e.type_code,
+                e.icao_aircraft_type
+            FROM aircraft a
+            LEFT JOIN aircraft_enrichment e ON a.id = e.aircraft_id
+            """
+            cur.execute(query)
             for row in cur.fetchall():
                 hex_c = (row["icao_hex"] or "").strip().upper()
                 if hex_c:
                     self.db_aircraft[hex_c] = dict(row)
             conn.close()
-            logger.info("Loaded %d aircraft from relational DB", len(self.db_aircraft))
+            logger.info("Loaded %d aircraft from relational DB with joined enrichment", len(self.db_aircraft))
         except Exception as e:
             logger.warning("Error loading relational DB for enrichment: %s", e)
 
@@ -174,23 +404,23 @@ class AircraftEnricher:
 
     def extract_manufacturer(self, model_str: str, type_code: str = "") -> str:
         text = f"{model_str} {type_code}".upper()
-        if any(k in text for k in ["AIRBUS", "A318", "A319", "A320", "A321", "A330", "A340", "A350", "A380", "A20N", "A21N", "A319", "A332", "A333", "A359", "A388"]):
+        if any(k in text for k in ["AIRBUS", "A318", "A319", "A320", "A321", "A330", "A340", "A350", "A380", "A20N", "A21N", "A332", "A333", "A359", "A388"]):
             return "Airbus"
         if any(k in text for k in ["BOEING", "B737", "B738", "B739", "B38M", "B39M", "B744", "B748", "B752", "B763", "B772", "B77W", "B77L", "B788", "B789", "B78X"]):
             return "Boeing"
-        if any(k in text for k in ["EMBRAER", "E145", "E170", "E175", "E190", "E195", "E290", "E295", "ERJ"]):
+        if any(k in text for k in ["EMBRAER", "E145", "E170", "E175", "E190", "E195", "E290", "E295", "ERJ", "PHENOM"]):
             return "Embraer"
-        if any(k in text for k in ["BOMBARDIER", "CRJ", "CL60", "GLOBAL", "DHC8", "Q400"]):
+        if any(k in text for k in ["BOMBARDIER", "CRJ", "CL60", "GLOBAL", "DHC8", "Q400", "CHALLENGER"]):
             return "Bombardier"
-        if any(k in text for k in ["CESSNA", "C172", "C182", "C208", "C550", "C560", "C680", "C750"]):
+        if any(k in text for k in ["CESSNA", "C172", "C182", "C208", "C550", "C560", "C680", "C750", "CITATION"]):
             return "Cessna"
         if any(k in text for k in ["BEECH", "KING AIR", "BE20", "BE30", "BE90", "BE9L", "B350"]):
             return "Beechcraft"
         if any(k in text for k in ["GULFSTREAM", "GLF", "G150", "G280", "G450", "G550", "G650"]):
             return "Gulfstream"
-        if any(k in text for k in ["DASSAULT", "FALCON", "FA7X", "FA8X", "FA50", "FA20"]):
+        if any(k in text for k in ["DASSAULT", "FALCON", "FA7X", "FA8X", "FA50", "FA20", "RAFALE", "MIRAGE"]):
             return "Dassault"
-        if any(k in text for k in ["ATR", "AT43", "AT45", "AT72", "AT75", "AT76"]):
+        if any(k in text for k in ["ATR", "AT43", "AT45", "AT46", "AT72", "AT75", "AT76"]):
             return "ATR"
         if any(k in text for k in ["ANTONOV", "AN12", "AN24", "AN26", "AN32", "AN72", "AN124", "AN225"]):
             return "Antonov"
@@ -198,14 +428,22 @@ class AircraftEnricher:
             return "Ilyushin"
         if any(k in text for k in ["TUPOLEV", "TU134", "TU154", "TU204", "TU214"]):
             return "Tupolev"
-        if any(k in text for k in ["SUKHOI", "SU95", "SSJ100"]):
+        if any(k in text for k in ["SUKHOI", "SU30", "SU95", "SSJ100"]):
             return "Sukhoi"
+        if any(k in text for k in ["LOCKHEED", "C130", "C30J"]):
+            return "Lockheed Martin"
         if any(k in text for k in ["BELL"]):
             return "Bell"
-        if any(k in text for k in ["SIKORSKY"]):
+        if any(k in text for k in ["SIKORSKY", "UH60", "S76", "S92"]):
             return "Sikorsky"
-        if any(k in text for k in ["EUROCOPTER"]):
-            return "Eurocopter"
+        if any(k in text for k in ["EUROCOPTER", "EC135", "EC145", "AS350"]):
+            return "Airbus Helicopters"
+        if any(k in text for k in ["LEONARDO", "AGUSTA", "AW139", "AW169", "AW189"]):
+            return "Leonardo"
+        if any(k in text for k in ["PILATUS", "PC12", "PC24"]):
+            return "Pilatus"
+        if any(k in text for k in ["DORNIER", "DO228", "D228"]):
+            return "Dornier"
 
         parts = model_str.strip().split()
         if parts and parts[0] not in ("-", "Unknown", "Unknown Type"):
@@ -227,13 +465,20 @@ class AircraftEnricher:
 
     def enrich_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
         """Enriches flat aircraft record (used in Aircraft Database table and Live Airspace feed)."""
-        hex_u = (item.get("icao_hex") or item.get("id") or "").strip().upper()
-        callsign = item.get("callsign") or "-"
-        reg = item.get("registration") or "-"
-        ac_type = item.get("aircraft_type") or "-"
+        hex_u = (item.get("icao_hex") or item.get("id") or item.get("hex") or "").strip().upper()
+        callsign = (item.get("callsign") or item.get("flight") or "-").strip()
+        reg = item.get("registration") or item.get("r") or "-"
+        ac_type = (
+            item.get("aircraft_type") 
+            or item.get("type_code") 
+            or item.get("icao_aircraft_type") 
+            or item.get("t") 
+            or item.get("type") 
+            or "-"
+        )
         mfr = item.get("manufacturer") or "-"
-        model = item.get("model") or "-"
-        op = item.get("operator") or "-"
+        model = item.get("model") or item.get("description") or "-"
+        op = item.get("operator") or item.get("operator_name") or "-"
 
         placeholders = {
             "A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7",
@@ -255,7 +500,7 @@ class AircraftEnricher:
         if op in placeholders or op.lower() in ("unknown", "unknown operator", "commercial operator", "in transit", "-", "none"):
             op = "-"
 
-        # 1. Check relational DB
+        # 1. Check relational DB (a + e joined)
         db_match = self.db_aircraft.get(hex_u)
         if db_match:
             if db_match.get("registration") and reg in ("-", hex_u, ""):
@@ -269,7 +514,7 @@ class AircraftEnricher:
             if db_match.get("operator") and op in ("-", "Unknown Operator", ""):
                 op = db_match["operator"]
 
-        # 2. Check AlertLookup
+        # 2. Check AlertLookup (special / military / VIP database)
         alert_match = self.alert_lookup.get(hex_u)
         if alert_match:
             if alert_match.get("registration") and reg in ("-", hex_u, ""):
@@ -281,7 +526,7 @@ class AircraftEnricher:
             if alert_match.get("icao_type") and ac_type in ("-", "Unknown", ""):
                 ac_type = alert_match["icao_type"]
 
-        # 3. Check Reference CSV
+        # 3. Check Reference CSV (625,000+ ICAO aircraft)
         csv_match = self.csv_aircraft.get(hex_u)
         if csv_match:
             if csv_match.get("registration") and reg in ("-", hex_u, ""):
@@ -291,31 +536,81 @@ class AircraftEnricher:
             if csv_match.get("model_name") and model in ("-", "Unknown", ""):
                 model = csv_match["model_name"]
 
-        # 4. Extract Manufacturer if missing
+        # 4. Check ICAO_TYPE_MAP for known type code expansion
+        type_upper = ac_type.upper().strip() if ac_type and ac_type != "-" else ""
+        if type_upper in ICAO_TYPE_MAP:
+            mapped_model, mapped_mfr = ICAO_TYPE_MAP[type_upper]
+            if model in ("-", "Unknown", "", type_upper):
+                model = mapped_model
+            if mfr in ("-", "Unknown", ""):
+                mfr = mapped_mfr
+
+        # 5. Check Fleet profiling from Callsign prefix (e.g. AKJ -> B38M Boeing 737 MAX 8)
+        callsign_prefix = ""
+        if callsign and callsign != "-":
+            c_match = re.match(r"^([A-Z]{3})", callsign.upper())
+            if c_match:
+                callsign_prefix = c_match.group(1)
+
+        if callsign_prefix in FLEET_FALLBACK_MAP:
+            fb_type, fb_model, fb_mfr, fb_op = FLEET_FALLBACK_MAP[callsign_prefix]
+            if ac_type in ("-", "Unknown", ""):
+                ac_type = fb_type
+            if model in ("-", "Unknown", ""):
+                model = fb_model
+            if mfr in ("-", "Unknown", ""):
+                mfr = fb_mfr
+            if op in ("-", "Unknown Operator", ""):
+                op = fb_op
+
+        # 6. Extract Manufacturer if missing
         if mfr in ("-", "Unknown", "") and model not in ("-", "Unknown", ""):
             mfr = self.extract_manufacturer(model, ac_type)
 
-        # 5. Resolve Operator from callsign
-        if (op in ("-", "Unknown Operator", "") or not op) and callsign and callsign != "-":
-            match = re.match(r"^([A-Z]{3})", callsign.upper())
-            if match:
-                code = match.group(1)
-                if code in OPERATOR_MAP:
-                    op = OPERATOR_MAP[code][0]
+        # 7. Resolve Operator from callsign
+        if (op in ("-", "Unknown Operator", "") or not op) and callsign_prefix:
+            if callsign_prefix in OPERATOR_MAP:
+                op = OPERATOR_MAP[callsign_prefix][0]
 
-        # 6. Expand operator abbreviation if 3-letter ICAO or mapped code
+        # 8. Expand operator abbreviation if 3-letter ICAO or mapped code
         op = self.expand_operator_name(op)
+
+        # 9. Cross-populate model <-> ac_type if one is still missing
+        if (model in ("-", "Unknown", "") or not model) and ac_type and ac_type != "-":
+            model = ac_type
+        if (ac_type in ("-", "Unknown", "") or not ac_type) and model and model != "-":
+            ac_type = model
 
         resolved_reg = reg if reg and reg != "-" else hex_u
         country = self.get_country_from_registration(resolved_reg, item.get("country") or "Unknown")
 
+        final_ac_type = ac_type if ac_type and ac_type != "-" else "Unknown"
+        final_mfr = mfr if mfr and mfr != "-" else "Unknown"
+        final_model = model if model and model != "-" else (final_ac_type if final_ac_type != "Unknown" else "Unknown")
+
         item["registration"] = resolved_reg
-        item["aircraft_type"] = ac_type if ac_type and ac_type != "-" else "Unknown"
-        item["manufacturer"] = mfr if mfr and mfr != "-" else "Unknown"
-        item["model"] = model if model and model != "-" else "Unknown"
+        item["aircraft_type"] = final_ac_type
+        item["type_code"] = final_ac_type
+        item["icao_aircraft_type"] = final_ac_type
+        item["manufacturer"] = final_mfr
+        item["model"] = final_model
         item["operator"] = op
         item["country"] = country
-        item["is_enriched"] = (item["manufacturer"] != "Unknown" or item["operator"] != "Unknown Operator")
+        item["is_enriched"] = (item["manufacturer"] != "Unknown" or item["operator"] != "Unknown Operator" or item["aircraft_type"] != "Unknown")
+
+        # Keep nested identity in sync if present
+        if "identity" in item and isinstance(item["identity"], dict):
+            item["identity"]["icao_hex"] = hex_u
+            item["identity"]["registration"] = resolved_reg
+            item["identity"]["callsign"] = callsign
+            item["identity"]["aircraft_type"] = final_ac_type
+            item["identity"]["type_code"] = final_ac_type
+            item["identity"]["icao_aircraft_type"] = final_ac_type
+            item["identity"]["manufacturer"] = final_mfr
+            item["identity"]["model"] = final_model
+            item["identity"]["operator"] = op
+            item["identity"]["country"] = country
+
         return item
 
     def enrich_rare_item(self, item: Dict[str, Any]) -> Dict[str, Any]:

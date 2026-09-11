@@ -235,17 +235,24 @@ class AircraftEnricher:
         model = item.get("model") or "-"
         op = item.get("operator") or "-"
 
-        placeholders = {"A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "B0", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "C0", "C1", "C2", "Unknown", "-", "", "None", "null", hex_u}
+        placeholders = {
+            "A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7",
+            "B0", "B1", "B2", "B3", "B4", "B5", "B6", "B7",
+            "C0", "C1", "C2", "Unknown", "Unknown Operator", "Unknown Type",
+            "-", "", "None", "null", hex_u,
+            "adsb_icao", "adsb_other", "tisb_trackfile", "mode_s",
+            "Commercial Operator", "Commercial", "In Transit"
+        }
 
-        if reg in placeholders:
+        if reg in placeholders or reg.lower() in ("unknown", "-", "none"):
             reg = "-"
-        if ac_type in placeholders:
+        if ac_type in placeholders or ac_type.lower() in ("adsb_icao", "adsb_other", "tisb_trackfile", "mode_s", "unknown"):
             ac_type = "-"
-        if mfr in placeholders:
+        if mfr in placeholders or mfr.lower() in ("unknown", "-", "none"):
             mfr = "-"
-        if model in placeholders:
+        if model in placeholders or model.lower() in ("unknown", "-", "none", "adsb_icao"):
             model = "-"
-        if op in placeholders or op == "In Transit":
+        if op in placeholders or op.lower() in ("unknown", "unknown operator", "commercial operator", "in transit", "-", "none"):
             op = "-"
 
         # 1. Check relational DB

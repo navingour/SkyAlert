@@ -379,8 +379,25 @@ class SkyAlertRemoteClient:
                 except Exception:
                     pass
 
-            reg = p.get("r") or hex_code
-            ac_type = p.get("t") or p.get("type") or "Unknown"
+            t_val = p.get("t") or p.get("aircraft_type") or ""
+            if str(t_val).lower() in ("adsb_icao", "adsb_other", "tisb_trackfile", "mode_s", "unknown", "-"):
+                t_val = ""
+
+            from app.aircraft_enricher import aircraft_enricher
+            en = aircraft_enricher.enrich_item({
+                "icao_hex": hex_code,
+                "callsign": callsign,
+                "registration": p.get("r") or "",
+                "aircraft_type": t_val
+            })
+
+            reg = en.get("registration") or p.get("r") or hex_code
+            ac_type = en.get("aircraft_type") or t_val or "Unknown"
+            mfr = en.get("manufacturer") or "Commercial"
+            model = en.get("model") or ac_type
+            operator = en.get("operator") or "Commercial Operator"
+            country = en.get("country") or "India Airspace"
+            op_icao = callsign[:3] if len(callsign) >= 3 and callsign[:3].isalpha() else ""
 
             flat = {
                 "id": hex_code,
@@ -390,11 +407,11 @@ class SkyAlertRemoteClient:
                 "aircraft_type": ac_type,
                 "type_code": ac_type,
                 "icao_aircraft_type": ac_type,
-                "manufacturer": "Commercial",
-                "model": ac_type,
-                "operator": "Commercial Operator",
-                "operator_icao": callsign[:3] if len(callsign) >= 3 and callsign[:3].isalpha() else "",
-                "country": "India Airspace",
+                "manufacturer": mfr,
+                "model": model,
+                "operator": operator,
+                "operator_icao": op_icao,
+                "country": country,
                 "first_seen_ist": datetime.now(IST_TZ).strftime("%d %b %H:%M IST"),
                 "last_seen_ist": datetime.now(IST_TZ).strftime("%d %b %H:%M IST"),
                 "total_sessions": 1,
@@ -420,7 +437,17 @@ class SkyAlertRemoteClient:
                 "duration_seconds": 60,
                 "session_id": 1,
                 "live": p,
-                "identity": {"icao_hex": hex_code, "callsign": callsign, "registration": reg, "aircraft_type": ac_type}
+                "identity": {
+                    "icao_hex": hex_code,
+                    "callsign": callsign,
+                    "registration": reg,
+                    "aircraft_type": ac_type,
+                    "type_code": ac_type,
+                    "icao_aircraft_type": ac_type,
+                    "manufacturer": mfr,
+                    "model": model,
+                    "operator": operator
+                }
             }
             live_list.append(flat)
 

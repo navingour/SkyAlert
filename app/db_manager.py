@@ -28,8 +28,14 @@ class DatabaseManager:
         self.pg_url = os.environ.get("DATABASE_URL")
         self.is_pg = bool(self.pg_url and ("postgres" in self.pg_url or "postgresql" in self.pg_url))
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        self.init_db()
-        self.migrate_legacy_data()
+        try:
+            self.init_db()
+        except Exception as e:
+            logger.warning(f"init_db non-fatal warning: {e}")
+        try:
+            self.migrate_legacy_data()
+        except Exception as e:
+            logger.warning(f"migrate_legacy_data non-fatal warning: {e}")
 
     def get_connection(self):
         if self.is_pg:
@@ -44,9 +50,11 @@ class DatabaseManager:
         
         conn = sqlite3.connect(str(SQLITE_DB_PATH), check_same_thread=False)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA synchronous=NORMAL;")
-        conn.execute("PRAGMA foreign_keys=ON;")
+        try:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA synchronous=NORMAL;")
+        except Exception:
+            pass
         return conn
 
     def init_db(self):
@@ -57,146 +65,165 @@ class DatabaseManager:
         timestamp_type = "TIMESTAMPTZ" if self.is_pg else "TEXT"
 
         # 1. aircraft table
-        cur.execute(f"""
-        CREATE TABLE IF NOT EXISTS aircraft (
-            id {id_type},
-            icao_hex VARCHAR(10) UNIQUE NOT NULL,
-            callsign VARCHAR(20),
-            registration VARCHAR(20),
-            aircraft_type VARCHAR(20),
-            manufacturer VARCHAR(100),
-            model VARCHAR(100),
-            operator VARCHAR(100),
-            first_seen {timestamp_type},
-            last_seen {timestamp_type},
-            total_sessions INTEGER DEFAULT 0,
-            total_observations INTEGER DEFAULT 0,
-            created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
-            updated_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
-        );
-        """)
+        try:
+            cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS aircraft (
+                id {id_type},
+                icao_hex VARCHAR(10) UNIQUE NOT NULL,
+                callsign VARCHAR(20),
+                registration VARCHAR(20),
+                aircraft_type VARCHAR(20),
+                manufacturer VARCHAR(100),
+                model VARCHAR(100),
+                operator VARCHAR(100),
+                first_seen {timestamp_type},
+                last_seen {timestamp_type},
+                total_sessions INTEGER DEFAULT 0,
+                total_observations INTEGER DEFAULT 0,
+                created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
+                updated_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
+            );
+            """)
+        except Exception as e:
+            logger.debug(f"Table aircraft creation notice: {e}")
 
         # 2. aircraft_enrichment table
-        cur.execute(f"""
-        CREATE TABLE IF NOT EXISTS aircraft_enrichment (
-            id {id_type},
-            aircraft_id INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
-            registration VARCHAR(20),
-            aircraft_type VARCHAR(20),
-            manufacturer VARCHAR(100),
-            model VARCHAR(100),
-            operator_name VARCHAR(100),
-            operator_icao VARCHAR(10),
-            operator_iata VARCHAR(10),
-            country VARCHAR(100),
-            source VARCHAR(50),
-            source_url VARCHAR(255),
-            manufacturer_icao VARCHAR(20),
-            operator_callsign VARCHAR(50),
-            owner VARCHAR(150),
-            serial_number VARCHAR(50),
-            type_code VARCHAR(20),
-            icao_aircraft_type VARCHAR(20),
-            built VARCHAR(20),
-            first_flight_date VARCHAR(20),
-            category VARCHAR(50),
-            created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
-            updated_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
-            CONSTRAINT uq_enrichment_aircraft UNIQUE(aircraft_id)
-        );
-        """)
+        try:
+            cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS aircraft_enrichment (
+                id {id_type},
+                aircraft_id INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
+                registration VARCHAR(20),
+                aircraft_type VARCHAR(20),
+                manufacturer VARCHAR(100),
+                model VARCHAR(100),
+                operator_name VARCHAR(100),
+                operator_icao VARCHAR(10),
+                operator_iata VARCHAR(10),
+                country VARCHAR(100),
+                source VARCHAR(50),
+                source_url VARCHAR(255),
+                manufacturer_icao VARCHAR(20),
+                operator_callsign VARCHAR(50),
+                owner VARCHAR(150),
+                serial_number VARCHAR(50),
+                type_code VARCHAR(20),
+                icao_aircraft_type VARCHAR(20),
+                built VARCHAR(20),
+                first_flight_date VARCHAR(20),
+                category VARCHAR(20),
+                notes TEXT,
+                created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
+                updated_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
+            );
+            """)
+        except Exception as e:
+            logger.debug(f"Table aircraft_enrichment creation notice: {e}")
 
-        # 3. detection_sessions (visits) table
-        cur.execute(f"""
-        CREATE TABLE IF NOT EXISTS detection_sessions (
-            id {id_type},
-            aircraft_id INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
-            started_at {timestamp_type} NOT NULL,
-            last_observed_at {timestamp_type} NOT NULL,
-            ended_at {timestamp_type},
-            observation_count INTEGER DEFAULT 0,
-            first_distance_km REAL,
-            first_bearing REAL,
-            last_distance_km REAL,
-            last_bearing REAL,
-            origin_iata VARCHAR(10),
-            origin_icao VARCHAR(10),
-            destination_iata VARCHAR(10),
-            destination_icao VARCHAR(10)
-        );
-        """)
+        # 3. detection_sessions table
+        try:
+            cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS detection_sessions (
+                id {id_type},
+                aircraft_id INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
+                started_at {timestamp_type} NOT NULL,
+                last_observed_at {timestamp_type} NOT NULL,
+                ended_at {timestamp_type},
+                observation_count INTEGER DEFAULT 1,
+                first_distance_km REAL,
+                first_bearing REAL,
+                last_distance_km REAL,
+                last_bearing REAL,
+                origin_iata VARCHAR(10),
+                origin_icao VARCHAR(10),
+                destination_iata VARCHAR(10),
+                destination_icao VARCHAR(10),
+                origin_name VARCHAR(150),
+                origin_city VARCHAR(100),
+                origin_country VARCHAR(100),
+                destination_name VARCHAR(150),
+                destination_city VARCHAR(100),
+                destination_country VARCHAR(100),
+                created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
+            );
+            """)
+        except Exception as e:
+            logger.debug(f"Table detection_sessions creation notice: {e}")
 
-        # Migration columns if table already existed without them
-        for col_name, col_type in [
-            ("origin_iata", "VARCHAR(10)"),
-            ("origin_icao", "VARCHAR(10)"),
-            ("destination_iata", "VARCHAR(10)"),
-            ("destination_icao", "VARCHAR(10)"),
-        ]:
+        # 4. observations table
+        try:
+            cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS observations (
+                id {id_type},
+                aircraft_id INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
+                session_id INTEGER REFERENCES detection_sessions(id) ON DELETE CASCADE,
+                timestamp {timestamp_type} NOT NULL,
+                altitude INTEGER,
+                ground_speed REAL,
+                track REAL,
+                latitude REAL,
+                longitude REAL,
+                vertical_rate INTEGER,
+                squawk VARCHAR(10),
+                distance_km REAL,
+                bearing REAL,
+                raw_data TEXT,
+                created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
+            );
+            """)
+        except Exception as e:
+            logger.debug(f"Table observations creation notice: {e}")
+
+        # 5. alert_history / events table
+        try:
+            cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS alert_history (
+                id {id_type},
+                timestamp {timestamp_type} NOT NULL,
+                hex VARCHAR(10) NOT NULL,
+                flight VARCHAR(20),
+                registration VARCHAR(20),
+                aircraft_type VARCHAR(20),
+                operator VARCHAR(100),
+                alert_type VARCHAR(50),
+                title VARCHAR(100),
+                priority INTEGER DEFAULT 3,
+                squawk VARCHAR(10),
+                altitude INTEGER,
+                speed REAL,
+                distance REAL,
+                raw_json TEXT,
+                updated_at {timestamp_type}
+            );
+            """)
+        except Exception as e:
+            logger.debug(f"Table alert_history creation notice: {e}")
+
+        # Indexes for fast querying
+        indexes = [
+            "CREATE INDEX IF NOT EXISTS idx_aircraft_hex ON aircraft(icao_hex);",
+            "CREATE INDEX IF NOT EXISTS idx_aircraft_last_seen ON aircraft(last_seen);",
+            "CREATE INDEX IF NOT EXISTS idx_aircraft_operator ON aircraft(operator);",
+            "CREATE INDEX IF NOT EXISTS idx_aircraft_type ON aircraft(aircraft_type);",
+            "CREATE INDEX IF NOT EXISTS idx_sessions_aircraft ON detection_sessions(aircraft_id);",
+            "CREATE INDEX IF NOT EXISTS idx_sessions_started ON detection_sessions(started_at);",
+            "CREATE INDEX IF NOT EXISTS idx_sessions_ended ON detection_sessions(ended_at);",
+            "CREATE INDEX IF NOT EXISTS idx_sessions_ac_started ON detection_sessions(aircraft_id, started_at DESC);",
+            "CREATE INDEX IF NOT EXISTS idx_obs_session ON observations(session_id);",
+            "CREATE INDEX IF NOT EXISTS idx_obs_aircraft ON observations(aircraft_id);",
+            "CREATE INDEX IF NOT EXISTS idx_obs_timestamp ON observations(timestamp);",
+            "CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alert_history(timestamp);"
+        ]
+        for idx_sql in indexes:
             try:
-                cur.execute(f"ALTER TABLE detection_sessions ADD COLUMN {col_name} {col_type};")
+                cur.execute(idx_sql)
             except Exception:
                 pass
 
-        # 4. observations table
-        cur.execute(f"""
-        CREATE TABLE IF NOT EXISTS observations (
-            id {id_type},
-            aircraft_id INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
-            session_id INTEGER REFERENCES detection_sessions(id) ON DELETE SET NULL,
-            timestamp {timestamp_type} NOT NULL,
-            altitude_baro INTEGER,
-            altitude_geom INTEGER,
-            ground_speed REAL,
-            track REAL,
-            latitude REAL,
-            longitude REAL,
-            vertical_rate INTEGER,
-            squawk VARCHAR(10),
-            distance_km REAL,
-            bearing REAL,
-            raw_data TEXT,
-            created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
-        );
-        """)
-
-        # 5. alert_history / events table
-        cur.execute(f"""
-        CREATE TABLE IF NOT EXISTS alert_history (
-            id {id_type},
-            timestamp {timestamp_type} NOT NULL,
-            hex VARCHAR(10) NOT NULL,
-            flight VARCHAR(20),
-            registration VARCHAR(20),
-            aircraft_type VARCHAR(20),
-            operator VARCHAR(100),
-            alert_type VARCHAR(50),
-            title VARCHAR(100),
-            priority INTEGER DEFAULT 3,
-            squawk VARCHAR(10),
-            altitude INTEGER,
-            speed REAL,
-            distance REAL,
-            raw_json TEXT,
-            updated_at {timestamp_type}
-        );
-        """)
-
-        # Indexes for fast querying
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_aircraft_hex ON aircraft(icao_hex);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_aircraft_last_seen ON aircraft(last_seen);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_aircraft_operator ON aircraft(operator);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_aircraft_type ON aircraft(aircraft_type);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_aircraft ON detection_sessions(aircraft_id);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_started ON detection_sessions(started_at);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_ended ON detection_sessions(ended_at);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_ac_started ON detection_sessions(aircraft_id, started_at DESC);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_obs_session ON observations(session_id);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_obs_aircraft ON observations(aircraft_id);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_obs_timestamp ON observations(timestamp);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alert_history(timestamp);")
-
-        conn.commit()
+        try:
+            conn.commit()
+        except Exception:
+            pass
         conn.close()
 
     def migrate_legacy_data(self):

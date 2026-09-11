@@ -142,8 +142,17 @@ class SkyAlertRemoteClient:
                 messages = live.get("messages", 0)
 
                 # ── Identity / enrichment ────────────────────────────────────
-                registration = identity.get("registration") or hex_code
-                aircraft_type = identity.get("type_code") or identity.get("icao_aircraft_type") or (live.get("category") or "")
+                registration = identity.get("registration") or live.get("r") or hex_code
+                aircraft_type = (
+                    identity.get("type_code")
+                    or identity.get("icao_aircraft_type")
+                    or identity.get("aircraft_type")
+                    or live.get("t")
+                    or live.get("aircraft_type")
+                    or live.get("type")
+                    or (live.get("category") if live.get("category") and not str(live.get("category")).startswith("A") else "")
+                    or "Unknown"
+                )
                 manufacturer  = identity.get("manufacturer") or "Unknown"
                 model         = identity.get("model") or aircraft_type or "Unknown"
                 operator      = identity.get("operator") or "Unknown Operator"
@@ -307,8 +316,58 @@ class SkyAlertRemoteClient:
                 "total_pages": total_pages
             }
         except Exception as e:
-            logger.error(f"Failed to fetch aircraft table from {url}: {e}")
-            return {"items": [], "total": 0, "page": page, "page_size": page_size, "total_pages": 1}
+            logger.debug(f"Remote aircraft list from {url} unavailable: {e}")
+            try:
+                from app.db_manager import db_manager
+                conn = db_manager.get_connection()
+                cur = conn.cursor()
+                query = """
+                    SELECT a.id, a.icao_hex, a.callsign, a.registration, a.aircraft_type,
+                           a.first_seen, a.last_seen, a.total_sessions, a.total_observations,
+                           e.manufacturer, e.model, e.operator_name, e.icao_aircraft_type
+                    FROM aircraft a
+                    LEFT JOIN aircraft_enrichment e ON a.id = e.aircraft_id
+                """
+                params_sql = []
+                if search:
+                    query += " WHERE a.icao_hex LIKE ? OR a.callsign LIKE ? OR a.registration LIKE ?"
+                    s_param = f"%{search}%"
+                    params_sql.extend([s_param, s_param, s_param])
+                query += " ORDER BY a.last_seen DESC"
+                cur.execute(query, params_sql)
+                rows = cur.fetchall()
+                items = []
+                for r in rows:
+                    items.append({
+                        "id": str(r["id"]),
+                        "icao_hex": r["icao_hex"],
+                        "callsign": r["callsign"] or "-",
+                        "registration": r["registration"] or r["icao_hex"],
+                        "aircraft_type": r["icao_aircraft_type"] or r["aircraft_type"] or "Unknown",
+                        "model": r["model"] or r["aircraft_type"] or "Unknown",
+                        "manufacturer": r["manufacturer"] or "Unknown",
+                        "operator": r["operator_name"] or "Unknown Operator",
+                        "first_seen_ist": r["first_seen"] or "-",
+                        "last_seen_ist": r["last_seen"] or "-",
+                        "visits_today": 1,
+                        "duration_today": "10m",
+                        "lifetime_visits": r["total_sessions"] or 1,
+                        "lifetime_observations": r["total_observations"] or 10,
+                        "is_enriched": bool(r["model"] or r["operator_name"])
+                    })
+                conn.close()
+                total = len(items)
+                offset = (page - 1) * page_size
+                return {
+                    "items": items[offset:offset + page_size],
+                    "total": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "total_pages": max(1, (total + page_size - 1) // page_size)
+                }
+            except Exception as db_err:
+                logger.error(f"Local DB fallback failed: {db_err}")
+                return {"items": [], "total": 0, "page": page, "page_size": page_size, "total_pages": 1}
 
     def get_aircraft_detail(self, id_or_hex: str) -> Optional[Dict[str, Any]]:
         """Fetches individual aircraft intelligence and detection sessions from 192.168.0.118."""

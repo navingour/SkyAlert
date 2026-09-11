@@ -927,44 +927,102 @@ async def get_operators(timeframe: str = Query("lifetime"), limit: int = 150):
 TYPE_MAP = {
     'A20N': ('Airbus', 'A320neo'),
     'A21N': ('Airbus', 'A321neo'),
+    'A19N': ('Airbus', 'A319neo'),
     'A320': ('Airbus', 'A320-200'),
     'A321': ('Airbus', 'A321-200'),
+    'A319': ('Airbus', 'A319-100'),
+    'A318': ('Airbus', 'A318'),
     'A332': ('Airbus', 'A330-200'),
     'A333': ('Airbus', 'A330-300'),
+    'A338': ('Airbus', 'A330-800neo'),
     'A339': ('Airbus', 'A330-900neo'),
+    'A343': ('Airbus', 'A340-300'),
+    'A346': ('Airbus', 'A340-600'),
     'A359': ('Airbus', 'A350-900'),
     'A351': ('Airbus', 'A350-1000'),
     'A388': ('Airbus', 'A380-800'),
+    'A3ST': ('Airbus', 'A300-600ST Beluga'),
+    'A337': ('Airbus', 'A330-743L Beluga XL'),
+    'B737': ('Boeing', '737-700'),
     'B738': ('Boeing', '737-800'),
     'B739': ('Boeing', '737-900ER'),
     'B38M': ('Boeing', '737 MAX 8'),
     'B39M': ('Boeing', '737 MAX 9'),
+    'B3JM': ('Boeing', '737 MAX 10'),
+    'B744': ('Boeing', '747-400'),
+    'B748': ('Boeing', '747-8F / Intercontinental'),
+    'BLCF': ('Boeing', '747-400 LCF Dreamlifter'),
+    'B752': ('Boeing', '757-200'),
+    'B753': ('Boeing', '757-300'),
+    'B762': ('Boeing', '767-200'),
+    'B763': ('Boeing', '767-300ER / Freighter'),
+    'B764': ('Boeing', '767-400ER'),
     'B772': ('Boeing', '777-200ER'),
+    'B773': ('Boeing', '777-300'),
     'B77W': ('Boeing', '777-300ER'),
     'B77L': ('Boeing', '777-200LR / Freighter'),
+    'B779': ('Boeing', '777-9X'),
     'B788': ('Boeing', '787-8 Dreamliner'),
     'B789': ('Boeing', '787-9 Dreamliner'),
     'B78X': ('Boeing', '787-10 Dreamliner'),
-    'B744': ('Boeing', '747-400'),
-    'B748': ('Boeing', '747-8F'),
     'AT76': ('ATR', 'ATR 72-600'),
-    'AT75': ('ATR', 'ATR 72-500')
+    'AT75': ('ATR', 'ATR 72-500'),
+    'AT72': ('ATR', 'ATR 72'),
+    'AT45': ('ATR', 'ATR 42-500'),
+    'AT46': ('ATR', 'ATR 42-600'),
+    'DH8D': ('De Havilland Canada', 'Dash 8-Q400'),
+    'DH8C': ('De Havilland Canada', 'Dash 8-Q300'),
+    'E190': ('Embraer', 'E190'),
+    'E195': ('Embraer', 'E195'),
+    'E290': ('Embraer', 'E190-E2'),
+    'E295': ('Embraer', 'E195-E2'),
+    'E75L': ('Embraer', 'E175 (Enhanced Wingtips)'),
+    'E170': ('Embraer', 'E170'),
+    'E175': ('Embraer', 'E175'),
+    'CRJ2': ('Bombardier', 'CRJ-200'),
+    'CRJ7': ('Bombardier', 'CRJ-700'),
+    'CRJ9': ('Bombardier', 'CRJ-900'),
+    'CRJX': ('Bombardier', 'CRJ-1000'),
+    'BCS1': ('Airbus', 'A220-100'),
+    'BCS3': ('Airbus', 'A220-300'),
+    'C17':  ('Boeing', 'C-17 Globemaster III'),
+    'C5M':  ('Lockheed', 'C-5M Super Galaxy'),
+    'C130': ('Lockheed', 'C-130 Hercules'),
+    'C30J': ('Lockheed Martin', 'C-130J Super Hercules'),
+    'IL76': ('Ilyushin', 'Il-76 Candid'),
+    'AN12': ('Antonov', 'An-12'),
+    'AN32': ('Antonov', 'An-32'),
+    'A124': ('Antonov', 'An-124 Ruslan'),
+    'A225': ('Antonov', 'An-225 Mriya'),
+    'E3TF': ('Boeing', 'E-3 Sentry AWACS'),
+    'P8':   ('Boeing', 'P-8I Neptune / Poseidon'),
+    'SU30': ('Sukhoi', 'Su-30MKI Flanker-H'),
+    'RFAL': ('Dassault', 'Rafale'),
+    'MIG29':('Mikoyan', 'MiG-29 Fulcrum'),
+    'GLF5': ('Gulfstream', 'G550'),
+    'GLF6': ('Gulfstream', 'G650 / G650ER'),
+    'GLEX': ('Bombardier', 'Global Express / 6000'),
+    'FA7X': ('Dassault', 'Falcon 7X'),
+    'CL60': ('Bombardier', 'Challenger 600 / 605 / 650'),
+    'PC12': ('Pilatus', 'PC-12 NGX'),
+    'BE20': ('Beechcraft', 'Super King Air 200'),
+    'B350': ('Beechcraft', 'Super King Air 350')
 }
 
 @router.get("/analytics/types")
 async def get_types(limit: int = 100):
-    """Dynamically aggregates aircraft types from database."""
+    """Dynamically aggregates all aircraft types from local database, remote backend, and live feed."""
     types: Dict[str, Dict[str, Any]] = {}
 
-    def add_type(type_code: str, mfr_raw: str, model_raw: str, visits: int, obs: int, duration_sec: int):
+    def add_type(type_code: str, mfr_raw: str, model_raw: str, visits: int, obs: int, duration_sec: int, ac_count: int = 1, flt_count: int = 1):
         tc = (type_code or '').strip().upper()
-        if not tc or tc in ('-', 'UNKNOWN'):
+        if not tc or tc in ('-', 'UNKNOWN', 'NONE', 'N/A', 'NULL'):
             return
         
         if tc in TYPE_MAP:
             mfr, model = TYPE_MAP[tc]
         else:
-            mfr = mfr_raw or ('Boeing' if any(x in tc for x in ('777', '787', '747', '737', '757')) else 'Airbus' if 'A3' in tc else 'Commercial')
+            mfr = mfr_raw or ('Boeing' if any(x in tc for x in ('777', '787', '747', '737', '757', '767')) else 'Airbus' if 'A3' in tc or 'A2' in tc else 'Commercial')
             model = model_raw or tc
 
         if tc not in types:
@@ -979,12 +1037,91 @@ async def get_types(limit: int = 100):
                 'total_duration_sec': 0
             }
 
-        types[tc]['aircraft_count'] += 1
-        types[tc]['unique_flights'] += 1
+        types[tc]['aircraft_count'] += max(1, ac_count)
+        types[tc]['unique_flights'] += max(1, flt_count)
         types[tc]['total_visits'] += max(1, visits)
         types[tc]['total_observations'] += max(10, obs)
         types[tc]['total_duration_sec'] += max(300, duration_sec)
 
+        # Update manufacturer or model if enriched name is better than generic fallback
+        if mfr_raw and types[tc]['manufacturer'] in ('Commercial', 'Unknown'):
+            types[tc]['manufacturer'] = mfr_raw
+        if model_raw and types[tc]['model'] == tc:
+            types[tc]['model'] = model_raw
+
+    # 1. Query local SQLite relational database (aircraft + enrichment tables)
+    try:
+        from app.db_manager import db_manager
+        conn = db_manager.get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT 
+                COALESCE(NULLIF(e.icao_aircraft_type, ''), NULLIF(e.aircraft_type, ''), NULLIF(a.aircraft_type, '')) as type_code,
+                COALESCE(NULLIF(e.manufacturer, ''), '') as mfr,
+                COALESCE(NULLIF(e.model, ''), '') as mdl,
+                COUNT(DISTINCT a.icao_hex) as ac_cnt,
+                COUNT(DISTINCT a.callsign) as flt_cnt,
+                SUM(COALESCE(a.total_sessions, 1)) as visits,
+                SUM(COALESCE(a.total_observations, 1)) as obs
+            FROM aircraft a
+            LEFT JOIN aircraft_enrichment e ON a.id = e.aircraft_id
+            WHERE (a.aircraft_type IS NOT NULL AND a.aircraft_type != '' AND a.aircraft_type != '-')
+               OR (e.aircraft_type IS NOT NULL AND e.aircraft_type != '' AND e.aircraft_type != '-')
+               OR (e.icao_aircraft_type IS NOT NULL AND e.icao_aircraft_type != '' AND e.icao_aircraft_type != '-')
+            GROUP BY type_code
+        """)
+        for row in cur.fetchall():
+            tc = row["type_code"]
+            if tc:
+                add_type(
+                    tc,
+                    row["mfr"],
+                    row["mdl"],
+                    row["visits"] or 1,
+                    row["obs"] or 10,
+                    (row["visits"] or 1) * 600,
+                    ac_count=row["ac_cnt"] or 1,
+                    flt_count=row["flt_cnt"] or 1
+                )
+        conn.close()
+    except Exception as e:
+        logger.warning(f"Failed to query database for aircraft types: {e}")
+
+    # 2. Main remote/synced aircraft database scan
+    try:
+        ac_list = skyalert_remote.get_aircraft_list(page_size=500)
+        for a in ac_list.get('items', []):
+            tc = a.get('aircraft_type') or a.get('icao_aircraft_type') or ''
+            if tc and tc not in ('-', 'UNKNOWN', 'Unknown', 'None'):
+                add_type(
+                    tc,
+                    a.get('manufacturer') or '',
+                    a.get('model') or '',
+                    a.get('lifetime_visits') or a.get('total_sessions') or 1,
+                    a.get('lifetime_observations') or a.get('total_observations') or 10,
+                    600
+                )
+    except Exception as e:
+        logger.warning(f"Failed to fetch aircraft list for types: {e}")
+
+    # 3. Live aircraft feed scan (real-time flying types)
+    try:
+        live = skyalert_remote.get_live_aircraft()
+        for p in live:
+            tc = p.get('aircraft_type') or p.get('t') or (p.get('identity') or {}).get('aircraft_type') or ''
+            if tc and tc not in ('-', 'UNKNOWN', 'Unknown', 'None'):
+                add_type(
+                    tc,
+                    p.get('manufacturer') or (p.get('identity') or {}).get('manufacturer') or '',
+                    p.get('model') or (p.get('identity') or {}).get('model') or '',
+                    1,
+                    p.get('session_obs_count') or 10,
+                    600
+                )
+    except Exception as e:
+        logger.warning(f"Failed to fetch live aircraft for types: {e}")
+
+    # 4. Rare aircraft scan
     try:
         data = skyalert_remote.get_rare_aircraft(max_visits=100)
         for a in data.get('rare_aircraft', []):

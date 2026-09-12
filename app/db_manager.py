@@ -6,16 +6,41 @@ from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 
+import yaml
+from dotenv import load_dotenv
+
 logger = logging.getLogger("skyalert.db")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
+
 DATA_DIR = BASE_DIR / "data"
 SQLITE_DB_PATH = DATA_DIR / "skyalert_relational.db"
 OLD_AIRCRAFT_DB = DATA_DIR / "aircraft.db"
 OLD_SKYALERT_DB = DATA_DIR / "skyalert.db"
+CONFIG_FILE = BASE_DIR / "config" / "config.yaml"
 
 # IST Timezone (UTC +5:30)
 IST_TZ = timezone(timedelta(hours=5, minutes=30))
+
+
+def _get_configured_db_url() -> Optional[str]:
+    url = os.environ.get("DATABASE_URL", "").strip()
+    if url:
+        return url
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                cfg = yaml.safe_load(f) or {}
+            db_cfg = cfg.get("database", {})
+            if isinstance(db_cfg, dict) and db_cfg.get("url"):
+                return db_cfg["url"].strip()
+            elif isinstance(db_cfg, str) and db_cfg.strip():
+                return db_cfg.strip()
+        except Exception as e:
+            logger.debug(f"Could not read database URL from config.yaml: {e}")
+    return None
+
 
 class DatabaseManager:
     """
@@ -25,17 +50,26 @@ class DatabaseManager:
     detection_sessions (visits), observations, and alert_history.
     """
     def __init__(self):
-        self.pg_url = os.environ.get("DATABASE_URL")
+        self.pg_url = _get_configured_db_url()
         self.is_pg = bool(self.pg_url and ("postgres" in self.pg_url or "postgresql" in self.pg_url))
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         try:
             self.init_db()
         except Exception as e:
             logger.warning(f"init_db non-fatal warning: {e}")
-        try:
-            self.migrate_legacy_data()
-        except Exception as e:
-            logger.warning(f"migrate_legacy_data non-fatal warning: {e}")
+        if not self.is_pg:
+            try:
+                self.migrate_legacy_data()
+            except Exception as e:
+                logger.warning(f"migrate_legacy_data non-fatal warning: {e}")
+
+    @property
+    def ph(self) -> str:
+        return "%s" if self.is_pg else "?"
+
+    @property
+    def placeholder(self) -> str:
+        return "%s" if self.is_pg else "?"
 
     def get_connection(self):
         if self.is_pg:

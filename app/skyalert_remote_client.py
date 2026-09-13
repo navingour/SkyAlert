@@ -148,30 +148,36 @@ class SkyAlertRemoteClient:
             }
 
     def _fetch_tar1090_raw(self) -> List[Dict[str, Any]]:
-        """Tries multiple local and network sources for aircraft.json."""
-        urls_to_try = [
-            self.tar1090_url,
-            "http://127.0.0.1/tar1090/data/aircraft.json",
-            "http://localhost/tar1090/data/aircraft.json",
-            "http://192.168.0.132/tar1090/data/aircraft.json",
-            "http://127.0.0.1:8080/data/aircraft.json"
-        ]
-        
+        """Tries configured and network sources for aircraft.json with 1.5s micro-caching."""
+        now_ts = datetime.now(timezone.utc).timestamp()
+        if hasattr(self, "_tar_cache"):
+            cache_ts, cached_planes = self._tar_cache
+            if now_ts - cache_ts < 1.5 and cached_planes:
+                return cached_planes
+
+        # Read configured URL first
+        primary_url = self.tar1090_url
         try:
             from app.config import load_config
             cfg_url = (load_config().get("tar1090") or {}).get("url")
-            if cfg_url and cfg_url not in urls_to_try:
-                urls_to_try.insert(0, cfg_url)
+            if cfg_url:
+                primary_url = cfg_url
         except Exception:
             pass
 
+        urls_to_try = [primary_url, "http://192.168.0.132/tar1090/data/aircraft.json", "http://127.0.0.1/tar1090/data/aircraft.json"]
+        seen_urls = set()
         for u in urls_to_try:
+            if not u or u in seen_urls:
+                continue
+            seen_urls.add(u)
             try:
-                r = requests.get(u, timeout=2)
+                r = requests.get(u, timeout=1.0)
                 if r.status_code == 200:
                     d = r.json()
                     ac = d.get("aircraft", [])
-                    if ac:
+                    if ac is not None:
+                        self._tar_cache = (now_ts, ac)
                         return ac
             except Exception:
                 continue
@@ -199,143 +205,7 @@ class SkyAlertRemoteClient:
         return []
 
     def get_live_aircraft(self) -> List[Dict[str, Any]]:
-        """Consumes the enriched live aircraft feed with TAR1090/readsb local fallback."""
-        url = f"{self.base_url}/live-aircraft"
-        try:
-            r = requests.get(url, timeout=3)
-            if r.status_code == 200:
-                data = r.json()
-                raw_planes = data.get("aircraft", [])
-                if raw_planes:
-                    live_list = []
-                    for entry in raw_planes:
-                        live = entry.get("live") or {}
-                        identity = entry.get("identity") or {}
-
-                        hex_code = (identity.get("icao_hex") or (live.get("hex") or "")).upper()
-                        if not hex_code:
-                            continue
-
-                        callsign = (identity.get("callsign") or (live.get("flight") or "")).strip() or "-"
-                        alt = live.get("alt_baro")
-                        gs = live.get("gs")
-                        track = live.get("track")
-                        dist = live.get("r_dst")
-                        bearing = live.get("r_dir")
-                        lat = live.get("lat")
-                        lon = live.get("lon")
-                        squawk = live.get("squawk") or "-"
-                        messages = live.get("messages", 0)
-
-                        registration = identity.get("registration") or live.get("r") or hex_code
-                        aircraft_type = (
-                            identity.get("type_code")
-                            or identity.get("icao_aircraft_type")
-                            or identity.get("aircraft_type")
-                            or live.get("t")
-                            or live.get("aircraft_type")
-                            or live.get("type")
-                            or (live.get("category") if live.get("category") and not str(live.get("category")).startswith("A") else "")
-                            or "Unknown"
-                        )
-                        manufacturer = identity.get("manufacturer") or "Unknown"
-                        model = identity.get("model") or aircraft_type or "Unknown"
-                        operator = identity.get("operator") or "Unknown Operator"
-                        operator_icao = identity.get("operator_icao") or ""
-                        country = identity.get("country") or "India Airspace"
-                        owner = identity.get("owner") or operator
-                        first_seen = identity.get("first_seen")
-                        last_seen = identity.get("last_seen")
-                        total_sessions = identity.get("total_sessions") or 1
-                        total_obs = identity.get("total_observations") or messages
-
-                        def fmt_ts(ts_str):
-                            if not ts_str:
-                                return datetime.now(IST_TZ).strftime("%d %b %H:%M IST")
-                            try:
-                                dt = datetime.fromisoformat(ts_str)
-                                if dt.tzinfo is None:
-                                    dt = dt.replace(tzinfo=IST_TZ)
-                                return dt.astimezone(IST_TZ).strftime("%d %b %H:%M IST")
-                            except Exception:
-                                return str(ts_str)
-
-                        flat = {
-                            "id": hex_code,
-                            "icao_hex": hex_code,
-                            "callsign": callsign,
-                            "registration": registration,
-                            "aircraft_type": aircraft_type,
-                            "type_code": identity.get("type_code") or "",
-                            "icao_aircraft_type": identity.get("icao_aircraft_type") or "",
-                            "manufacturer": manufacturer,
-                            "model": model,
-                            "operator": operator,
-                            "operator_icao": operator_icao,
-                            "operator_iata": identity.get("operator_iata") or "",
-                            "country": country,
-                            "owner": owner,
-                            "serial_number": identity.get("serial_number") or "",
-                            "built": identity.get("built") or "",
-                            "first_flight_date": identity.get("first_flight_date") or "",
-                            "category": identity.get("category") or (live.get("category") or ""),
-                            "first_seen": first_seen,
-                            "last_seen": last_seen,
-                            "first_seen_ist": fmt_ts(first_seen),
-                            "last_seen_ist": fmt_ts(last_seen),
-                            "total_sessions": total_sessions,
-                            "total_observations": total_obs,
-                            "session_obs_count": messages,
-                            "lifetime_visits": total_sessions,
-                            "lifetime_observations": total_obs,
-                            "status": "LIVE",
-                            "latitude": lat,
-                            "longitude": lon,
-                            "altitude_ft": alt,
-                            "alt_baro": alt,
-                            "alt_geom": live.get("alt_geom"),
-                            "speed_kts": gs,
-                            "gs": gs,
-                            "ias": live.get("ias"),
-                            "tas": live.get("tas"),
-                            "mach": live.get("mach"),
-                            "track": track,
-                            "true_heading": live.get("true_heading"),
-                            "mag_heading": live.get("mag_heading"),
-                            "nav_heading": live.get("nav_heading"),
-                            "baro_rate": live.get("baro_rate"),
-                            "geom_rate": live.get("geom_rate"),
-                            "roll": live.get("roll"),
-                            "track_rate": live.get("track_rate"),
-                            "nav_altitude_mcp": live.get("nav_altitude_mcp"),
-                            "nav_altitude_fms": live.get("nav_altitude_fms"),
-                            "nav_qnh": live.get("nav_qnh"),
-                            "squawk": squawk,
-                            "emergency": live.get("emergency") or "none",
-                            "distance_km": round(dist, 1) if dist is not None else None,
-                            "bearing": round(bearing, 1) if bearing is not None else None,
-                            "rssi": live.get("rssi"),
-                            "seen": live.get("seen"),
-                            "seen_pos": live.get("seen_pos"),
-                            "oat": live.get("oat"),
-                            "tat": live.get("tat"),
-                            "wd": live.get("wd"),
-                            "ws": live.get("ws"),
-                            "messages": messages,
-                            "duration": "< 1m",
-                            "duration_seconds": 60,
-                            "session_id": identity.get("aircraft_id") or 1,
-                            "live": live,
-                            "identity": identity,
-                        }
-                        live_list.append(flat)
-
-                    live_list.sort(key=lambda x: x["distance_km"] if x["distance_km"] is not None else 9999)
-                    return live_list
-        except Exception:
-            pass
-
-        # Direct TAR1090/readsb stream parsing fallback
+        """Consumes TAR1090/readsb stream with fast database enrichment."""
         raw_ac = self._fetch_tar1090_raw()
         if not raw_ac:
             return []
@@ -399,6 +269,8 @@ class SkyAlertRemoteClient:
             country = en.get("country") or "India Airspace"
             op_icao = callsign[:3] if len(callsign) >= 3 and callsign[:3].isalpha() else ""
 
+            now_ist = datetime.now(IST_TZ).strftime("%d %b %H:%M IST")
+
             flat = {
                 "id": hex_code,
                 "icao_hex": hex_code,
@@ -411,9 +283,17 @@ class SkyAlertRemoteClient:
                 "model": model,
                 "operator": operator,
                 "operator_icao": op_icao,
+                "operator_iata": "",
                 "country": country,
-                "first_seen_ist": datetime.now(IST_TZ).strftime("%d %b %H:%M IST"),
-                "last_seen_ist": datetime.now(IST_TZ).strftime("%d %b %H:%M IST"),
+                "owner": operator,
+                "serial_number": "",
+                "built": "",
+                "first_flight_date": "",
+                "category": p.get("category") or "",
+                "first_seen": datetime.now(timezone.utc).isoformat(),
+                "last_seen": datetime.now(timezone.utc).isoformat(),
+                "first_seen_ist": now_ist,
+                "last_seen_ist": now_ist,
                 "total_sessions": 1,
                 "total_observations": messages or 10,
                 "session_obs_count": messages or 10,
@@ -427,11 +307,31 @@ class SkyAlertRemoteClient:
                 "alt_geom": p.get("alt_geom"),
                 "speed_kts": gs,
                 "gs": gs,
+                "ias": p.get("ias"),
+                "tas": p.get("tas"),
+                "mach": p.get("mach"),
                 "track": track,
+                "true_heading": p.get("true_heading"),
+                "mag_heading": p.get("mag_heading"),
+                "nav_heading": p.get("nav_heading"),
+                "baro_rate": p.get("baro_rate"),
+                "geom_rate": p.get("geom_rate"),
+                "roll": p.get("roll"),
+                "track_rate": p.get("track_rate"),
+                "nav_altitude_mcp": p.get("nav_altitude_mcp"),
+                "nav_altitude_fms": p.get("nav_altitude_fms"),
+                "nav_qnh": p.get("nav_qnh"),
                 "squawk": squawk,
                 "emergency": p.get("emergency") or "none",
                 "distance_km": round(dist, 1) if dist is not None else None,
                 "bearing": round(b_deg, 1) if b_deg is not None else None,
+                "rssi": p.get("rssi"),
+                "seen": p.get("seen"),
+                "seen_pos": p.get("seen_pos"),
+                "oat": p.get("oat"),
+                "tat": p.get("tat"),
+                "wd": p.get("wd"),
+                "ws": p.get("ws"),
                 "messages": messages,
                 "duration": "< 1m",
                 "duration_seconds": 60,

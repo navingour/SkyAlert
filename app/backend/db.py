@@ -223,6 +223,29 @@ class DatabaseManager:
         now_val = now_dt if self.is_pg else now_dt.isoformat()
         ph = self.ph
         conn = self.get_connection()
+
+        def _safe_int(v):
+            if v is None or v == "ground" or v == "None": return None
+            try: return int(v)
+            except Exception: return None
+
+        def _safe_float(v):
+            if v is None or v == "ground" or v == "None": return None
+            try: return float(v)
+            except Exception: return None
+
+        alt_b = _safe_int(plane.get("alt_baro"))
+        alt_g = _safe_int(plane.get("alt_geom"))
+        gs = _safe_float(plane.get("gs"))
+        track = _safe_float(plane.get("track"))
+        lat = _safe_float(plane.get("lat"))
+        lon = _safe_float(plane.get("lon"))
+        baro_rate = _safe_int(plane.get("baro_rate") or plane.get("geom_rate"))
+        oat = _safe_float(plane.get("oat"))
+        tat = _safe_float(plane.get("tat"))
+        ws = _safe_float(plane.get("ws"))
+        wd = _safe_float(plane.get("wd"))
+
         try:
             cur = conn.cursor()
             if self.is_pg:
@@ -231,17 +254,17 @@ class DatabaseManager:
                     INSERT INTO observations (
                         aircraft_id, session_id, observed_at, altitude_baro, altitude_geom,
                         ground_speed, track, latitude, longitude, barometric_rate, squawk,
-                        distance_km, bearing, raw_data, created_at
-                    ) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+                        distance_km, bearing, oat, tat, wind_speed, wind_direction, created_at
+                    ) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
                 """, (
                     ac_id, session_id, now_val,
-                    plane.get("alt_baro"), plane.get("alt_geom"),
-                    plane.get("gs"), plane.get("track"),
-                    plane.get("lat"), plane.get("lon"),
-                    plane.get("baro_rate") or plane.get("geom_rate"),
+                    alt_b, alt_g,
+                    gs, track,
+                    lat, lon,
+                    baro_rate,
                     str(plane.get("squawk") or ""),
                     dist_km, bearing,
-                    None,
+                    oat, tat, ws, wd,
                     now_val
                 ))
             else:
@@ -249,17 +272,17 @@ class DatabaseManager:
                     INSERT INTO observations (
                         aircraft_id, session_id, timestamp, altitude_baro, altitude_geom,
                         ground_speed, track, latitude, longitude, vertical_rate, squawk,
-                        distance_km, bearing, raw_data, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        distance_km, bearing, oat, tat, wind_speed, wind_direction, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     ac_id, session_id, now_val,
-                    plane.get("alt_baro"), plane.get("alt_geom"),
-                    plane.get("gs"), plane.get("track"),
-                    plane.get("lat"), plane.get("lon"),
-                    plane.get("baro_rate") or plane.get("geom_rate"),
+                    alt_b, alt_g,
+                    gs, track,
+                    lat, lon,
+                    baro_rate,
                     str(plane.get("squawk") or ""),
                     dist_km, bearing,
-                    None,
+                    oat, tat, ws, wd,
                     now_val
                 ))
             conn.commit()

@@ -42,29 +42,13 @@ router = APIRouter(prefix="/api")
 
 @router.get("/dashboard")
 async def get_dashboard(timeframe: str = Query("today")):
-    """Returns operational KPIs from local SQLite relational database and live stream."""
+    """Returns operational KPIs from PostgreSQL/SQLite database and live stream."""
     try:
-        kpis = analytics_service.get_dashboard_kpis()
+        tf = str(timeframe or "today").lower()
+        kpis = analytics_service.get_dashboard_kpis(tf)
         live_planes = skyalert_remote.get_live_aircraft()
         kpis["active_aircraft"] = len(live_planes)
         recent_alerts = status_service.recent_alerts(5)
-        
-        tf = str(timeframe or "today").lower() if isinstance(timeframe, str) else "today"
-        base_seen = kpis.get("aircraft_seen_today", 0)
-        base_visits = kpis.get("visits_today", 0)
-
-        if tf == "week":
-            kpis["aircraft_seen_today"] = max(int(base_seen * 2.8), base_seen)
-            kpis["visits_today"] = max(int(base_visits * 3.2), base_visits)
-            kpis["total_detection_time_today"] = "64d 12h"
-        elif tf == "month":
-            kpis["aircraft_seen_today"] = max(int(base_seen * 5.4), base_seen)
-            kpis["visits_today"] = max(int(base_visits * 8.5), base_visits)
-            kpis["total_detection_time_today"] = "180d 06h"
-        elif tf == "lifetime":
-            kpis["aircraft_seen_today"] = kpis.get("total_aircraft", 0)
-            kpis["visits_today"] = max(base_visits * 16, 19024)
-            kpis["total_detection_time_today"] = "365d+"
 
         return JSONResponse({
             "kpis": kpis,

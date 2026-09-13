@@ -245,11 +245,16 @@ class SkyAlertApp {
 
     startLivePolling() {
         this.fetchLiveAircraft();
+        this.loadDashboardKPIsOnly();
         if (this.livePollInterval) clearInterval(this.livePollInterval);
+        let kpiCounter = 0;
         this.livePollInterval = setInterval(() => {
             this.fetchLiveAircraft();
-            // Always keep dashboard KPIs and live count fresh regardless of active view
-            this.loadDashboardKPIsOnly();
+            kpiCounter++;
+            // Refresh dashboard KPIs every 14 seconds, or every poll when on dashboard view
+            if (this.currentView === "dashboard" || kpiCounter % 4 === 0) {
+                this.loadDashboardKPIsOnly();
+            }
         }, 3500);
     }
 

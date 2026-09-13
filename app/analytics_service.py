@@ -87,12 +87,28 @@ def get_ist_month_range() -> Tuple[str, str]:
     return start_ist.astimezone(timezone.utc).isoformat(), end_ist.astimezone(timezone.utc).isoformat()
 
 class AnalyticsService:
-    def get_dashboard_kpis(self) -> Dict[str, Any]:
-        """Calculates all main dashboard KPIs adhering to exact project definitions."""
+    def get_dashboard_kpis(self, timeframe: str = "today") -> Dict[str, Any]:
+        """Calculates all main dashboard KPIs adhering to exact project definitions and timeframe filters."""
         conn = db_manager.get_connection()
         cur = conn.cursor()
         
-        today_start, today_end = get_ist_today_range()
+        tf = (timeframe or "today").strip().lower()
+        if tf == "week":
+            tf_start, tf_end = get_ist_week_range()
+            where_sessions = "WHERE s.started_at >= ? AND s.started_at < ?"
+            params_sessions = (tf_start, tf_end)
+        elif tf == "month":
+            tf_start, tf_end = get_ist_month_range()
+            where_sessions = "WHERE s.started_at >= ? AND s.started_at < ?"
+            params_sessions = (tf_start, tf_end)
+        elif tf == "lifetime":
+            where_sessions = ""
+            params_sessions = ()
+        else: # today
+            tf_start, tf_end = get_ist_today_range()
+            where_sessions = "WHERE s.started_at >= ? AND s.started_at < ?"
+            params_sessions = (tf_start, tf_end)
+
         active_cutoff = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
 
         # 1. Total Aircraft & Total Observations
@@ -111,74 +127,75 @@ class AnalyticsService:
         act_row = cur.fetchone()
         active_aircraft = get_row_val(act_row, 0, "count") or 0
 
-        # 3. Aircraft Seen Today
-        cur.execute("""
-        SELECT COUNT(DISTINCT aircraft_id)
-        FROM detection_sessions
-        WHERE started_at >= ? AND started_at < ?
-        """, (today_start, today_end))
-        seen_today_row = cur.fetchone()
-        aircraft_seen_today = get_row_val(seen_today_row, 0, "count") or 0
+        # 3. Aircraft Seen in timeframe
+        if where_sessions:
+            cur.execute(f"""
+            SELECT COUNT(DISTINCT aircraft_id)
+            FROM detection_sessions s
+            {where_sessions}
+            """, params_sessions)
+            seen_row = cur.fetchone()
+            aircraft_seen = get_row_val(seen_row, 0, "count") or 0
+        else:
+            aircraft_seen = total_aircraft
 
-        # 4. Visits Today
-        cur.execute("""
-        SELECT COUNT(*),
-               COALESCE(SUM(strftime('%s', COALESCE(ended_at, last_observed_at)) - strftime('%s', started_at)), 0),
-               COALESCE(MAX(strftime('%s', COALESCE(ended_at, last_observed_at)) - strftime('%s', started_at)), 0),
-               COALESCE(AVG(strftime('%s', COALESCE(ended_at, last_observed_at)) - strftime('%s', started_at)), 0)
-        FROM detection_sessions
-        WHERE started_at >= ? AND started_at < ?
-        """, (today_start, today_end))
-        sess_today_row = cur.fetchone()
-        visits_today = get_row_val(sess_today_row, 0) or 0
-        detection_seconds_today = get_row_val(sess_today_row, 1) or 0
-        longest_session_today_sec = get_row_val(sess_today_row, 2) or 0
-        avg_visit_duration_today_sec = get_row_val(sess_today_row, 3) or 0
-
-        if visits_today == 0:
-            cur.execute("""
-            SELECT COUNT(*),
-                   COALESCE(AVG(strftime('%s', COALESCE(ended_at, last_observed_at)) - strftime('%s', started_at)), 0),
-                   COALESCE(MAX(strftime('%s', COALESCE(ended_at, last_observed_at)) - strftime('%s', started_at)), 0)
-            FROM detection_sessions
-            """)
-            overall_sess = cur.fetchone()
-            avg_visit_duration_today_sec = get_row_val(overall_sess, 1) or 900
-            longest_session_today_sec = get_row_val(overall_sess, 2) or 1800
+        # 4. Visits & Duration in timeframe
+        if db_manager.is_pg:
+            duration_sql = f"""
+            SELECT COUNT(*) AS total_visits,
+                   COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE(s.ended_at, s.last_observed_at) - s.started_at))), 0) AS total_sec,
+                   COALESCE(MAX(EXTRACT(EPOCH FROM (COALESCE(s.ended_at, s.last_observed_at) - s.started_at))), 0) AS max_sec,
+                   COALESCE(AVG(EXTRACT(EPOCH FROM (COALESCE(s.ended_at, s.last_observed_at) - s.started_at))), 0) AS avg_sec
+            FROM detection_sessions s
+            {where_sessions}
+            """
+        else:
+            duration_sql = f"""
+            SELECT COUNT(*) AS total_visits,
+                   COALESCE(SUM(strftime('%s', COALESCE(s.ended_at, s.last_observed_at)) - strftime('%s', s.started_at)), 0) AS total_sec,
+                   COALESCE(MAX(strftime('%s', COALESCE(s.ended_at, s.last_observed_at)) - strftime('%s', s.started_at)), 0) AS max_sec,
+                   COALESCE(AVG(strftime('%s', COALESCE(s.ended_at, s.last_observed_at)) - strftime('%s', s.started_at)), 0) AS avg_sec
+            FROM detection_sessions s
+            {where_sessions}
+            """
+        cur.execute(duration_sql, params_sessions)
+        sess_row = cur.fetchone()
+        visits = get_row_val(sess_row, 0, "total_visits") or 0
+        detection_seconds = float(get_row_val(sess_row, 1, "total_sec") or 0)
+        longest_session_sec = float(get_row_val(sess_row, 2, "max_sec") or 0)
+        avg_visit_duration_sec = float(get_row_val(sess_row, 3, "avg_sec") or 0)
 
         # 5. Enriched vs Unknown Aircraft
         cur.execute("SELECT COUNT(*) FROM aircraft_enrichment WHERE model IS NOT NULL OR operator_name IS NOT NULL;")
         enriched_count = cur.fetchone()[0]
         unknown_count = max(0, total_aircraft - enriched_count)
 
-        # 6. Unique Operators Today
-        cur.execute("""
-        SELECT COUNT(DISTINCT a.operator)
-        FROM aircraft a
-        JOIN detection_sessions s ON a.id = s.aircraft_id
-        WHERE s.started_at >= ? AND s.started_at < ? AND a.operator IS NOT NULL AND a.operator != ''
-        """, (today_start, today_end))
+        # 6. Unique Operators in timeframe
+        cur.execute(f"""
+        SELECT COUNT(DISTINCT COALESCE(NULLIF(e.operator_name, ''), NULLIF(a.operator, '')))
+        FROM detection_sessions s
+        JOIN aircraft a ON s.aircraft_id = a.id
+        LEFT JOIN aircraft_enrichment e ON a.id = e.aircraft_id
+        {where_sessions}
+        """, params_sessions)
         uniq_ops_row = cur.fetchone()
-        unique_operators_today = get_row_val(uniq_ops_row, 0) or 0
-        if unique_operators_today == 0:
-            cur.execute("SELECT COUNT(DISTINCT operator) FROM aircraft WHERE operator IS NOT NULL AND operator != '';")
-            unique_operators_today = cur.fetchone()[0]
+        unique_operators = get_row_val(uniq_ops_row, 0) or 0
 
         conn.close()
 
         return {
-            "aircraft_seen_today": aircraft_seen_today,
-            "visits_today": visits_today,
+            "aircraft_seen_today": aircraft_seen,
+            "visits_today": visits,
             "active_aircraft": active_aircraft,
             "total_aircraft": total_aircraft,
             "total_observations": total_observations,
-            "total_detection_time_today": format_duration(detection_seconds_today),
-            "total_detection_time_seconds": detection_seconds_today,
+            "total_detection_time_today": format_duration(detection_seconds),
+            "total_detection_time_seconds": detection_seconds,
             "known_enriched_aircraft": enriched_count,
             "unknown_aircraft": unknown_count,
-            "unique_operators_today": unique_operators_today,
-            "longest_detection_session_today": format_duration(longest_session_today_sec),
-            "average_visit_duration": format_duration(avg_visit_duration_today_sec),
+            "unique_operators_today": unique_operators,
+            "longest_detection_session_today": format_duration(longest_session_sec),
+            "average_visit_duration": format_duration(avg_visit_duration_sec),
             "station_time_ist": format_ist_datetime(datetime.now(timezone.utc))
         }
 

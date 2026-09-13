@@ -55,15 +55,15 @@ def _serialize_row_val(v):
 
 def _adapt_pg_query(query: str) -> str:
     # Convert SQLite strftime('%s', A) - strftime('%s', B) to PostgreSQL epoch difference
-    pattern_diff = r"strftime\(\s*'%s'\s*,\s*([^)]+)\)\s*-\s*strftime\(\s*'%s'\s*,\s*([^)]+)\)"
-    query = re.sub(pattern_diff, r"(EXTRACT(EPOCH FROM \1) - EXTRACT(EPOCH FROM \2))", query, flags=re.IGNORECASE)
+    pattern_diff = r"strftime\(\s*['\"]%s['\"]\s*,\s*([^)]+)\)\s*-\s*strftime\(\s*['\"]%s['\"]\s*,\s*([^)]+)\)"
+    query = re.sub(pattern_diff, r"(EXTRACT(EPOCH FROM (\1)) - EXTRACT(EPOCH FROM (\2)))", query, flags=re.IGNORECASE)
     
     # Convert single strftime('%s', A) to EXTRACT(EPOCH FROM A)
-    pattern_single = r"strftime\(\s*'%s'\s*,\s*([^)]+)\)"
-    query = re.sub(pattern_single, r"EXTRACT(EPOCH FROM \1)", query, flags=re.IGNORECASE)
+    pattern_single = r"strftime\(\s*['\"]%s['\"]\s*,\s*([^)]+)\)"
+    query = re.sub(pattern_single, r"EXTRACT(EPOCH FROM (\1))", query, flags=re.IGNORECASE)
     
     # Convert SQLite date('now', 'start of day') to CURRENT_DATE
-    query = re.sub(r"date\(\s*'now'\s*,\s*'start of day'\s*\)", "CURRENT_DATE", query, flags=re.IGNORECASE)
+    query = re.sub(r"date\(\s*['\"]now['\"]\s*,\s*['\"]start of day['\"]\s*\)", "CURRENT_DATE", query, flags=re.IGNORECASE)
 
     if "?" in query:
         query = query.replace("?", "%s")

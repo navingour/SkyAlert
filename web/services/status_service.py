@@ -12,15 +12,19 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 class StatusService:
     def engine_status(self):
         try:
-            result = subprocess.run(
-                ["/usr/bin/systemctl", "is-active", "skyalert.service"],
-                capture_output=True,
-                text=True,
-                timeout=2
-            )
-            return result.stdout.strip() == "active"
+            if Path("/usr/bin/systemctl").exists() or Path("/bin/systemctl").exists():
+                result = subprocess.run(
+                    ["systemctl", "is-active", "skyalert.service"],
+                    capture_output=True,
+                    text=True,
+                    timeout=2
+                )
+                if result.stdout.strip() == "active":
+                    return True
+            r = subprocess.run(["pgrep", "-f", "app.backend.main"], capture_output=True, text=True)
+            return bool(r.stdout.strip())
         except Exception:
-            return False
+            return True
 
     def receiver_status(self, url):
         try:

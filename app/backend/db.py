@@ -3,7 +3,7 @@ import sqlite3
 import logging
 import yaml
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 
@@ -34,6 +34,18 @@ def _get_configured_db_url() -> Optional[str]:
         except Exception as e:
             logger.debug(f"Could not read database URL from config.yaml: {e}")
     return None
+
+
+def _parse_date(val: Any) -> Optional[date]:
+    if not val:
+        return None
+    if isinstance(val, date):
+        return val
+    try:
+        s = str(val).strip()[:10]
+        return datetime.strptime(s, "%Y-%m-%d").date()
+    except Exception:
+        return None
 
 
 class DatabaseManager:
@@ -76,7 +88,8 @@ class DatabaseManager:
         return conn
 
     def upsert_aircraft(self, hex_code: str, callsign: str = None, reg: str = None, ac_type: str = None) -> int:
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_dt = datetime.now(timezone.utc)
+        now_val = now_dt if self.is_pg else now_dt.isoformat()
         ph = self.ph
         conn = self.get_connection()
         try:
@@ -93,7 +106,7 @@ class DatabaseManager:
                         total_observations = aircraft.total_observations + 1,
                         updated_at = EXCLUDED.updated_at
                     RETURNING id;
-                """, (hex_code, callsign, reg, ac_type, now_iso, now_iso, now_iso, now_iso))
+                """, (hex_code, callsign, reg, ac_type, now_val, now_val, now_val, now_val))
                 row = cur.fetchone()
                 ac_id = row["id"] if isinstance(row, dict) else row[0]
             else:
@@ -110,12 +123,12 @@ class DatabaseManager:
                             total_observations = total_observations + 1,
                             updated_at = ?
                         WHERE id = ?
-                    """, (callsign, reg, ac_type, now_iso, now_iso, ac_id))
+                    """, (callsign, reg, ac_type, now_val, now_val, ac_id))
                 else:
                     cur.execute("""
                         INSERT INTO aircraft (icao_hex, callsign, registration, aircraft_type, first_seen, last_seen, total_sessions, total_observations, created_at, updated_at)
                         VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
-                    """, (hex_code, callsign, reg, ac_type, now_iso, now_iso, now_iso, now_iso))
+                    """, (hex_code, callsign, reg, ac_type, now_val, now_val, now_val, now_val))
                     ac_id = cur.lastrowid
             conn.commit()
             return ac_id
@@ -140,7 +153,8 @@ class DatabaseManager:
             conn.close()
 
     def start_session(self, ac_id: int, dist_km: float, bearing: float) -> int:
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_dt = datetime.now(timezone.utc)
+        now_val = now_dt if self.is_pg else now_dt.isoformat()
         ph = self.ph
         conn = self.get_connection()
         try:
@@ -152,7 +166,7 @@ class DatabaseManager:
                         observation_count, first_distance_km, first_bearing, last_distance_km, last_bearing
                     ) VALUES ({ph}, {ph}, {ph}, NULL, 1, {ph}, {ph}, {ph}, {ph})
                     RETURNING id;
-                """, (ac_id, now_iso, now_iso, dist_km, bearing, dist_km, bearing))
+                """, (ac_id, now_val, now_val, dist_km, bearing, dist_km, bearing))
                 row = cur.fetchone()
                 session_id = row["id"] if isinstance(row, dict) else row[0]
             else:
@@ -161,7 +175,7 @@ class DatabaseManager:
                         aircraft_id, started_at, last_observed_at, ended_at,
                         observation_count, first_distance_km, first_bearing, last_distance_km, last_bearing
                     ) VALUES (?, ?, ?, NULL, 1, ?, ?, ?, ?)
-                """, (ac_id, now_iso, now_iso, dist_km, bearing, dist_km, bearing))
+                """, (ac_id, now_val, now_val, dist_km, bearing, dist_km, bearing))
                 session_id = cur.lastrowid
             
             # Increment total_sessions in aircraft
@@ -172,7 +186,8 @@ class DatabaseManager:
             conn.close()
 
     def update_session(self, session_id: int, dist_km: float, bearing: float):
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_dt = datetime.now(timezone.utc)
+        now_val = now_dt if self.is_pg else now_dt.isoformat()
         ph = self.ph
         conn = self.get_connection()
         try:
@@ -184,7 +199,7 @@ class DatabaseManager:
                     last_distance_km = COALESCE({ph}, last_distance_km),
                     last_bearing = COALESCE({ph}, last_bearing)
                 WHERE id = {ph}
-            """, (now_iso, dist_km, bearing, session_id))
+            """, (now_val, dist_km, bearing, session_id))
             conn.commit()
         finally:
             conn.close()
@@ -204,28 +219,49 @@ class DatabaseManager:
             conn.close()
 
     def insert_observation(self, ac_id: int, session_id: int, plane: Dict[str, Any], dist_km: float, bearing: float):
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_dt = datetime.now(timezone.utc)
+        now_val = now_dt if self.is_pg else now_dt.isoformat()
         ph = self.ph
         conn = self.get_connection()
         try:
             cur = conn.cursor()
-            cur.execute(f"""
-                INSERT INTO observations (
-                    aircraft_id, session_id, timestamp, altitude_baro, altitude_geom,
-                    ground_speed, track, latitude, longitude, vertical_rate, squawk,
-                    distance_km, bearing, raw_data, created_at
-                ) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
-            """, (
-                ac_id, session_id, now_iso, 
-                plane.get("alt_baro"), plane.get("alt_geom"),
-                plane.get("gs"), plane.get("track"), 
-                plane.get("lat"), plane.get("lon"), 
-                plane.get("baro_rate") or plane.get("geom_rate"), 
-                str(plane.get("squawk") or ""),
-                dist_km, bearing, 
-                None,
-                now_iso
-            ))
+            if self.is_pg:
+                # PostgreSQL schema on Debian uses 'observed_at' and 'barometric_rate'
+                cur.execute(f"""
+                    INSERT INTO observations (
+                        aircraft_id, session_id, observed_at, altitude_baro, altitude_geom,
+                        ground_speed, track, latitude, longitude, barometric_rate, squawk,
+                        distance_km, bearing, raw_data, created_at
+                    ) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+                """, (
+                    ac_id, session_id, now_val,
+                    plane.get("alt_baro"), plane.get("alt_geom"),
+                    plane.get("gs"), plane.get("track"),
+                    plane.get("lat"), plane.get("lon"),
+                    plane.get("baro_rate") or plane.get("geom_rate"),
+                    str(plane.get("squawk") or ""),
+                    dist_km, bearing,
+                    None,
+                    now_val
+                ))
+            else:
+                cur.execute("""
+                    INSERT INTO observations (
+                        aircraft_id, session_id, timestamp, altitude_baro, altitude_geom,
+                        ground_speed, track, latitude, longitude, vertical_rate, squawk,
+                        distance_km, bearing, raw_data, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    ac_id, session_id, now_val,
+                    plane.get("alt_baro"), plane.get("alt_geom"),
+                    plane.get("gs"), plane.get("track"),
+                    plane.get("lat"), plane.get("lon"),
+                    plane.get("baro_rate") or plane.get("geom_rate"),
+                    str(plane.get("squawk") or ""),
+                    dist_km, bearing,
+                    None,
+                    now_val
+                ))
             conn.commit()
         finally:
             conn.close()
@@ -250,7 +286,9 @@ class DatabaseManager:
             conn.close()
 
     def upsert_enrichment(self, ac_id: int, enrich_data: Dict[str, Any]):
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_dt = datetime.now(timezone.utc)
+        now_val = now_dt if self.is_pg else now_dt.isoformat()
+        first_flight = _parse_date(enrich_data.get("first_flight_date")) if self.is_pg else (enrich_data.get("first_flight_date") or None)
         ph = self.ph
         conn = self.get_connection()
         try:
@@ -286,7 +324,7 @@ class DatabaseManager:
                         type_code = COALESCE(NULLIF(EXCLUDED.type_code, ''), aircraft_enrichment.type_code),
                         icao_aircraft_type = COALESCE(NULLIF(EXCLUDED.icao_aircraft_type, ''), aircraft_enrichment.icao_aircraft_type),
                         built = COALESCE(NULLIF(EXCLUDED.built, ''), aircraft_enrichment.built),
-                        first_flight_date = COALESCE(NULLIF(EXCLUDED.first_flight_date, ''), aircraft_enrichment.first_flight_date),
+                        first_flight_date = COALESCE(EXCLUDED.first_flight_date, aircraft_enrichment.first_flight_date),
                         category = COALESCE(NULLIF(EXCLUDED.category, ''), aircraft_enrichment.category),
                         updated_at = EXCLUDED.updated_at;
                 """, (
@@ -295,8 +333,8 @@ class DatabaseManager:
                     enrich_data.get("operator_name"), enrich_data.get("operator_icao"), enrich_data.get("operator_iata"), enrich_data.get("country"),
                     enrich_data.get("source"), enrich_data.get("source_url"), enrich_data.get("manufacturer_icao"), enrich_data.get("operator_callsign"),
                     enrich_data.get("owner"), enrich_data.get("serial_number"), enrich_data.get("type_code"), enrich_data.get("icao_aircraft_type"),
-                    enrich_data.get("built"), enrich_data.get("first_flight_date"), enrich_data.get("category"),
-                    now_iso, now_iso
+                    enrich_data.get("built"), first_flight, enrich_data.get("category"),
+                    now_val, now_val
                 ))
             else:
                 cur.execute("SELECT id FROM aircraft_enrichment WHERE aircraft_id = ?", (ac_id,))
@@ -314,7 +352,7 @@ class DatabaseManager:
                         enrich_data.get("operator_name"), enrich_data.get("operator_icao"), enrich_data.get("operator_iata"), enrich_data.get("country"),
                         enrich_data.get("source"), enrich_data.get("source_url"), enrich_data.get("manufacturer_icao"), enrich_data.get("operator_callsign"),
                         enrich_data.get("owner"), enrich_data.get("serial_number"), enrich_data.get("type_code"), enrich_data.get("icao_aircraft_type"),
-                        enrich_data.get("built"), enrich_data.get("first_flight_date"), enrich_data.get("category"), now_iso,
+                        enrich_data.get("built"), first_flight, enrich_data.get("category"), now_val,
                         ac_id
                     ))
                 else:
@@ -331,8 +369,8 @@ class DatabaseManager:
                         enrich_data.get("operator_name"), enrich_data.get("operator_icao"), enrich_data.get("operator_iata"), enrich_data.get("country"),
                         enrich_data.get("source"), enrich_data.get("source_url"), enrich_data.get("manufacturer_icao"), enrich_data.get("operator_callsign"),
                         enrich_data.get("owner"), enrich_data.get("serial_number"), enrich_data.get("type_code"), enrich_data.get("icao_aircraft_type"),
-                        enrich_data.get("built"), enrich_data.get("first_flight_date"), enrich_data.get("category"),
-                        now_iso, now_iso
+                        enrich_data.get("built"), first_flight, enrich_data.get("category"),
+                        now_val, now_val
                     ))
             conn.commit()
         finally:

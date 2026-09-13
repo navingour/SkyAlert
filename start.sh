@@ -42,6 +42,14 @@ echo "        Backend PID: $BACKEND_PID"
 
 sleep 2
 
+# Ensure port 8080 is clear
+OLD_PORT_PID=$(lsof -ti:8080 2>/dev/null)
+if [ -n "$OLD_PORT_PID" ]; then
+    echo "  ⚠️  Port 8080 is in use (PID: $OLD_PORT_PID). Clearing it..."
+    kill -9 $OLD_PORT_PID 2>/dev/null || true
+    sleep 1
+fi
+
 # Start the web dashboard
 echo "  [2/2] Starting web dashboard on port 8080..."
 echo ""

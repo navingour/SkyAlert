@@ -695,7 +695,7 @@ class AnalyticsService:
                 COALESCE(SUM(a.total_observations), 0) as total_observations
             FROM aircraft a
             LEFT JOIN aircraft_enrichment e ON a.id = e.aircraft_id
-            GROUP BY op_name
+            GROUP BY 1
         ),
         session_stats AS (
             SELECT 
@@ -704,7 +704,7 @@ class AnalyticsService:
             FROM detection_sessions s
             JOIN aircraft a ON s.aircraft_id = a.id
             LEFT JOIN aircraft_enrichment e ON a.id = e.aircraft_id
-            GROUP BY op_name
+            GROUP BY 1
         )
         SELECT 
             o.op_name,
@@ -767,8 +767,8 @@ class AnalyticsService:
         FROM aircraft a
         LEFT JOIN aircraft_enrichment e ON a.id = e.aircraft_id
         LEFT JOIN detection_sessions s ON a.id = s.aircraft_id
-        GROUP BY type_code
-        HAVING type_code != 'Unknown'
+        GROUP BY 1, 2, 3
+        HAVING COALESCE(NULLIF(a.aircraft_type, ''), NULLIF(e.aircraft_type, ''), 'Unknown') != 'Unknown'
         ORDER BY total_visits DESC, aircraft_count DESC
         LIMIT ?
         """, (limit,))
@@ -890,57 +890,254 @@ class AnalyticsService:
                     })
         return formations
 
-    def get_weather_analytics(self, live_planes: List[Dict[str, Any]]) -> Dict[str, Any]:
-        temp_readings = []
-        wind_readings = []
-        for p in live_planes:
-            live = p.get("live") or {}
-            oat = p.get("oat") if p.get("oat") is not None else live.get("oat")
-            tat = p.get("tat") if p.get("tat") is not None else live.get("tat")
-            wd = p.get("wd") if p.get("wd") is not None else live.get("wd")
-            ws = p.get("ws") if p.get("ws") is not None else live.get("ws")
-            alt = p.get("altitude_ft") or live.get("alt_baro") or 30000
+    def get_weather_analytics(self, live_planes: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """
+        Returns upper-air atmospheric temperature profiles and jetstream wind vectors,
+        sourced from real observation database soundings and current live aircraft telemetry.
+        """
+        conn = db_manager.get_connection()
+        cur = conn.cursor()
+        
+        thermal_points = []
+        wind_points = []
+        aircraft_set = set()
+        min_temp = 999
+        max_wind_kmh = 0
+        temp_sum = 0
+        temp_count = 0
 
-            if oat is not None:
-                temp_readings.append({"altitude": alt, "oat_c": oat, "tat_c": tat})
-            if ws is not None and wd is not None:
-                wind_readings.append({"altitude": alt, "wd": wd, "ws_ms": round(ws * 0.514444, 1)})
+        try:
+            cur.execute("""
+                SELECT 
+                    COALESCE(o.altitude_baro, o.altitude_geom) as altitude_ft,
+                    o.oat,
+                    o.tat,
+                    o.wind_speed,
+                    o.wind_direction,
+                    COALESCE(a.callsign, a.icao_hex, 'Unknown') as callsign,
+                    COALESCE(a.icao_hex, '') as icao_hex
+                FROM observations o
+                LEFT JOIN aircraft a ON o.aircraft_id = a.id
+                WHERE (
+                    (o.oat IS NOT NULL AND o.oat >= -90 AND o.oat <= 60)
+                    OR (o.tat IS NOT NULL AND o.tat >= -80 AND o.tat <= 75)
+                    OR (o.wind_speed IS NOT NULL AND o.wind_speed >= 0 AND o.wind_speed <= 300)
+                )
+                AND (COALESCE(o.altitude_baro, o.altitude_geom) >= 500)
+                ORDER BY o.id DESC
+                LIMIT 300
+            """)
+            rows = cur.fetchall()
 
-        avg_oat = round(sum(r["oat_c"] for r in temp_readings) / len(temp_readings), 1) if temp_readings else -36.5
-        max_wind = max((r["ws_ms"] for r in wind_readings), default=12.5)
+            for r in rows:
+                alt = r["altitude_ft"] if isinstance(r, (dict, sqlite3.Row)) or (hasattr(r, "__getitem__") and not isinstance(r, (tuple, list))) else r[0]
+                oat = r["oat"] if isinstance(r, (dict, sqlite3.Row)) or (hasattr(r, "__getitem__") and not isinstance(r, (tuple, list))) else r[1]
+                tat = r["tat"] if isinstance(r, (dict, sqlite3.Row)) or (hasattr(r, "__getitem__") and not isinstance(r, (tuple, list))) else r[2]
+                ws = r["wind_speed"] if isinstance(r, (dict, sqlite3.Row)) or (hasattr(r, "__getitem__") and not isinstance(r, (tuple, list))) else r[3]
+                wd = r["wind_direction"] if isinstance(r, (dict, sqlite3.Row)) or (hasattr(r, "__getitem__") and not isinstance(r, (tuple, list))) else r[4]
+                cs = r["callsign"] if isinstance(r, (dict, sqlite3.Row)) or (hasattr(r, "__getitem__") and not isinstance(r, (tuple, list))) else r[5]
+                hex_c = r["icao_hex"] if isinstance(r, (dict, sqlite3.Row)) or (hasattr(r, "__getitem__") and not isinstance(r, (tuple, list))) else r[6]
+
+                ident = cs or hex_c or "Aircraft"
+                if ident:
+                    aircraft_set.add(ident)
+
+                # Temp Profile (°C)
+                temp = oat if oat is not None else tat
+                if temp is not None and -90 <= temp <= 60:
+                    if temp < min_temp:
+                        min_temp = temp
+                    temp_sum += temp
+                    temp_count += 1
+                    thermal_points.append({
+                        "x": round(temp, 1),
+                        "y": alt,
+                        "label": f"{ident} ({round(temp, 1)}°C @ {alt:,} ft)"
+                    })
+
+                # Wind Profile (knots to km/h)
+                if ws is not None and 0 <= ws <= 300:
+                    ws_kmh = round(ws * 1.852, 1)
+                    if ws_kmh > max_wind_kmh:
+                        max_wind_kmh = ws_kmh
+                    wind_points.append({
+                        "x": ws_kmh,
+                        "y": alt,
+                        "wd": wd,
+                        "label": f"{ident} ({ws_kmh} km/h @ {alt:,} ft)"
+                    })
+        except Exception as e:
+            logger.debug(f"Error querying weather observations: {e}")
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        # Also incorporate any live planes with weather data
+        if live_planes:
+            for p in live_planes:
+                live = p.get("live") or {}
+                oat = p.get("oat") if p.get("oat") is not None else live.get("oat")
+                tat = p.get("tat") if p.get("tat") is not None else live.get("tat")
+                wd = p.get("wd") if p.get("wd") is not None else live.get("wd")
+                ws = p.get("ws") if p.get("ws") is not None else live.get("ws")
+                alt = p.get("altitude_ft") or p.get("alt_baro") or live.get("alt_baro")
+                ident = p.get("callsign") or p.get("icao_hex") or "Live Aircraft"
+
+                if alt and alt >= 500:
+                    if ident:
+                        aircraft_set.add(ident)
+                    temp = oat if oat is not None else tat
+                    if temp is not None and -90 <= temp <= 60:
+                        if temp < min_temp:
+                            min_temp = temp
+                        temp_sum += temp
+                        temp_count += 1
+                        thermal_points.insert(0, {
+                            "x": round(temp, 1),
+                            "y": alt,
+                            "label": f"{ident} (LIVE: {round(temp, 1)}°C @ {alt:,} ft)"
+                        })
+                    if ws is not None and 0 <= ws <= 300:
+                        ws_kmh = round(ws * 1.852, 1)
+                        if ws_kmh > max_wind_kmh:
+                            max_wind_kmh = ws_kmh
+                        wind_points.insert(0, {
+                            "x": ws_kmh,
+                            "y": alt,
+                            "wd": wd,
+                            "label": f"{ident} (LIVE: {ws_kmh} km/h @ {alt:,} ft)"
+                        })
+
+        avg_oat = round(temp_sum / temp_count, 1) if temp_count > 0 else -36.5
+        min_temp_val = min_temp if min_temp != 999 else -58.0
 
         return {
-            "temperature_samples": len(temp_readings),
-            "wind_samples": len(wind_readings),
+            "aircraft_count": len(aircraft_set),
+            "temperature_samples": len(thermal_points),
+            "wind_samples": len(wind_points),
+            "min_temperature_c": min_temp_val,
+            "max_wind_kmh": max_wind_kmh,
             "average_oat_c": avg_oat,
-            "max_jetstream_wind_ms": max_wind,
-            "thermal_profiles": temp_readings[:15],
-            "wind_vectors": wind_readings[:15]
+            "max_jetstream_wind_ms": round(max_wind_kmh / 3.6, 1),
+            "thermal_points": thermal_points,
+            "wind_points": wind_points,
+            "thermal_profiles": [{"altitude": p["y"], "oat_c": p["x"]} for p in thermal_points[:20]],
+            "wind_vectors": [{"altitude": p["y"], "ws_ms": round(p["x"] / 3.6, 1), "wd": p.get("wd", 0)} for p in wind_points[:20]]
         }
 
-    def get_receiver_analytics(self, live_planes: List[Dict[str, Any]]) -> Dict[str, Any]:
-        rssi_points = []
-        for p in live_planes:
-            live = p.get("live") or {}
-            rssi = p.get("rssi") if p.get("rssi") is not None else live.get("rssi")
-            dist = p.get("distance_km") if p.get("distance_km") is not None else live.get("r_dst")
-            bearing = p.get("bearing") if p.get("bearing") is not None else live.get("r_dir")
-            if rssi is not None and dist is not None:
-                rssi_points.append({
-                    "hex": p.get("icao_hex"),
-                    "rssi": rssi,
-                    "distance_km": dist,
-                    "bearing": bearing or 0.0
-                })
+    def get_receiver_analytics(self, live_planes: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """
+        Returns receiver signal horizon, RSSI distribution, and ADS-B health diagnostics.
+        Combines database observation history with live tracked aircraft.
+        """
+        conn = db_manager.get_connection()
+        cur = conn.cursor()
 
-        avg_rssi = round(sum(r["rssi"] for r in rssi_points) / len(rssi_points), 1) if rssi_points else -18.4
-        max_range = max((r["distance_km"] for r in rssi_points), default=220.5)
+        rssi_points = []
+        max_range = 0.0
+        total_rssi = 0.0
+        rssi_count = 0
+        horizon_buckets = {"N": 0.0, "NE": 0.0, "E": 0.0, "SE": 0.0, "S": 0.0, "SW": 0.0, "W": 0.0, "NW": 0.0}
+
+        def get_octant(bearing):
+            if bearing is None: return "N"
+            if bearing >= 337.5 or bearing < 22.5: return "N"
+            if bearing >= 22.5 and bearing < 67.5: return "NE"
+            if bearing >= 67.5 and bearing < 112.5: return "E"
+            if bearing >= 112.5 and bearing < 157.5: return "SE"
+            if bearing >= 157.5 and bearing < 202.5: return "S"
+            if bearing >= 202.5 and bearing < 247.5: return "SW"
+            if bearing >= 247.5 and bearing < 292.5: return "W"
+            if bearing >= 292.5 and bearing < 337.5: return "NW"
+            return "N"
+
+        try:
+            cur.execute("""
+                SELECT 
+                    o.distance_km, o.bearing, o.rssi,
+                    COALESCE(a.callsign, a.icao_hex, 'Aircraft') as callsign,
+                    COALESCE(a.icao_hex, '') as icao_hex
+                FROM observations o
+                LEFT JOIN aircraft a ON o.aircraft_id = a.id
+                WHERE o.distance_km IS NOT NULL AND o.rssi IS NOT NULL
+                ORDER BY o.id DESC
+                LIMIT 300
+            """)
+            rows = cur.fetchall()
+            for r in rows:
+                dist = r["distance_km"] if isinstance(r, (dict, sqlite3.Row)) or (hasattr(r, "__getitem__") and not isinstance(r, (tuple, list))) else r[0]
+                bearing = r["bearing"] if isinstance(r, (dict, sqlite3.Row)) or (hasattr(r, "__getitem__") and not isinstance(r, (tuple, list))) else r[1]
+                rssi = r["rssi"] if isinstance(r, (dict, sqlite3.Row)) or (hasattr(r, "__getitem__") and not isinstance(r, (tuple, list))) else r[2]
+                cs = r["callsign"] if isinstance(r, (dict, sqlite3.Row)) or (hasattr(r, "__getitem__") and not isinstance(r, (tuple, list))) else r[3]
+                hex_c = r["icao_hex"] if isinstance(r, (dict, sqlite3.Row)) or (hasattr(r, "__getitem__") and not isinstance(r, (tuple, list))) else r[4]
+
+                if dist is not None and dist > 0:
+                    if dist > max_range:
+                        max_range = float(dist)
+                    if bearing is not None:
+                        octant = get_octant(bearing)
+                        if dist > horizon_buckets[octant]:
+                            horizon_buckets[octant] = round(float(dist), 1)
+
+                if rssi is not None and dist is not None:
+                    total_rssi += float(rssi)
+                    rssi_count += 1
+                    rssi_points.append({
+                        "hex": hex_c,
+                        "callsign": cs,
+                        "rssi": round(float(rssi), 1),
+                        "distance_km": round(float(dist), 1),
+                        "bearing": round(float(bearing), 1) if bearing is not None else 0.0,
+                        "label": f"{cs} ({round(float(dist), 1)} km, {round(float(rssi), 1)} dBFS)"
+                    })
+        except Exception as e:
+            logger.debug(f"Error querying receiver observations: {e}")
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        # Also incorporate live planes
+        if live_planes:
+            for p in live_planes:
+                live = p.get("live") or {}
+                rssi = p.get("rssi") if p.get("rssi") is not None else live.get("rssi")
+                dist = p.get("distance_km") if p.get("distance_km") is not None else live.get("r_dst")
+                bearing = p.get("bearing") if p.get("bearing") is not None else live.get("r_dir")
+                cs = p.get("callsign") or p.get("icao_hex") or "Live Aircraft"
+                hex_c = p.get("icao_hex") or ""
+
+                if dist is not None and float(dist) > max_range:
+                    max_range = float(dist)
+                if bearing is not None and dist is not None:
+                    octant = get_octant(bearing)
+                    if float(dist) > horizon_buckets[octant]:
+                        horizon_buckets[octant] = round(float(dist), 1)
+
+                if rssi is not None and dist is not None:
+                    total_rssi += float(rssi)
+                    rssi_count += 1
+                    rssi_points.insert(0, {
+                        "hex": hex_c,
+                        "callsign": cs,
+                        "rssi": round(float(rssi), 1),
+                        "distance_km": round(float(dist), 1),
+                        "bearing": round(float(bearing), 1) if bearing is not None else 0.0,
+                        "label": f"{cs} (LIVE: {round(float(dist), 1)} km, {round(float(rssi), 1)} dBFS)"
+                    })
+
+        avg_rssi = round(total_rssi / rssi_count, 1) if rssi_count > 0 else -18.4
+        max_range_val = round(max_range, 1) if max_range > 0 else 220.5
 
         return {
-            "active_tracks": len(live_planes),
+            "active_tracks": len(live_planes) if live_planes else len(rssi_points),
             "average_rssi_dbm": avg_rssi,
-            "max_range_horizon_km": max_range,
+            "max_range_horizon_km": max_range_val,
             "signal_points": rssi_points,
+            "horizon_buckets": horizon_buckets,
             "adsb_health": {
                 "valid_nic": 98.5,
                 "valid_nac_p": 99.2,

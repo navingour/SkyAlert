@@ -550,95 +550,34 @@ class SkyAlertApp {
         }
     }
 
-    renderReceiverAnalytics(aircraftList) {
-        if (this.currentView !== "receiver") return;
+    renderReceiverData(data) {
+        if (this.currentView !== "receiver" || !data) return;
 
-        // Throttle updates to every 30 seconds
-        const now = Date.now();
-        if (this.lastReceiverUpdate && (now - this.lastReceiverUpdate < 30000)) {
-            return;
-        }
-        this.lastReceiverUpdate = now;
-
-        // Filter valid planes
-        const rxData = aircraftList.filter(a => a.distance_km !== undefined && a.distance_km !== null);
-
-        // Update Summary Cards
         const countEl = document.getElementById("rx-total-planes");
-        if (countEl) countEl.textContent = rxData.length;
+        if (countEl) countEl.textContent = data.active_tracks || (data.signal_points ? data.signal_points.length : 0);
 
-        let maxRange = 0;
-        let totalRssi = 0;
-        let rssiCount = 0;
-
-        const rssiPoints = [];
-        const horizonBuckets = { "N": 0, "NE": 0, "E": 0, "SE": 0, "S": 0, "SW": 0, "W": 0, "NW": 0 };
-        
-        // Helper to convert bearing to octant
-        const getOctant = (bearing) => {
-            if (bearing >= 337.5 || bearing < 22.5) return "N";
-            if (bearing >= 22.5 && bearing < 67.5) return "NE";
-            if (bearing >= 67.5 && bearing < 112.5) return "E";
-            if (bearing >= 112.5 && bearing < 157.5) return "SE";
-            if (bearing >= 157.5 && bearing < 202.5) return "S";
-            if (bearing >= 202.5 && bearing < 247.5) return "SW";
-            if (bearing >= 247.5 && bearing < 292.5) return "W";
-            if (bearing >= 292.5 && bearing < 337.5) return "NW";
-            return "N";
-        };
-
-        rxData.forEach(a => {
-            // Max Range
-            if (a.distance_km > maxRange) maxRange = a.distance_km;
-
-            // RSSI
-            if (a.rssi !== undefined && a.rssi !== null && a.rssi !== 0) {
-                totalRssi += a.rssi;
-                rssiCount++;
-                rssiPoints.push({
-                    x: Math.round(a.distance_km * 10) / 10,
-                    y: Math.round(a.rssi * 10) / 10,
-                    label: `${a.callsign || a.icao_hex} (${Math.round(a.distance_km)} km, ${Math.round(a.rssi)} dBFS)`
-                });
-            }
-
-            // Bearing for Horizon
-            if (a.bearing !== undefined && a.bearing !== null) {
-                const octant = getOctant(a.bearing);
-                if (a.distance_km > horizonBuckets[octant]) {
-                    horizonBuckets[octant] = Math.round(a.distance_km);
-                }
-            }
-        });
-
-        // Update Max Range
         const maxRangeEl = document.getElementById("rx-max-range");
-        if (maxRangeEl) maxRangeEl.textContent = `${Math.round(maxRange)} km`;
+        if (maxRangeEl) maxRangeEl.textContent = `${Math.round(data.max_range_horizon_km || 0)} km`;
 
-        // Update Avg RSSI
         const avgRssiEl = document.getElementById("rx-avg-rssi");
         if (avgRssiEl) {
-            if (rssiCount > 0) {
-                avgRssiEl.textContent = `${(totalRssi / rssiCount).toFixed(1)} dBFS`;
-            } else {
-                avgRssiEl.textContent = "-- dBFS";
-            }
+            avgRssiEl.textContent = data.average_rssi_dbm ? `${data.average_rssi_dbm} dBFS` : "-- dBFS";
         }
 
-        // Render Horizon Polar Chart
+        const horizonBuckets = data.horizon_buckets || { "N": 0, "NE": 0, "E": 0, "SE": 0, "S": 0, "SW": 0, "W": 0, "NW": 0 };
+        const labels = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+        const horizonData = labels.map(l => horizonBuckets[l] || 0);
+
         const horizonCtx = document.getElementById("rx-horizon-chart");
         if (horizonCtx) {
             if (this.rxHorizonChart) this.rxHorizonChart.destroy();
-            const labels = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-            const data = labels.map(l => horizonBuckets[l]);
-            
             this.rxHorizonChart = new Chart(horizonCtx, {
                 type: 'polarArea',
                 data: {
                     labels: labels,
                     datasets: [{
                         label: 'Max Range (km)',
-                        data: data,
+                        data: horizonData,
                         backgroundColor: [
                             'rgba(59, 130, 246, 0.6)', 'rgba(16, 185, 129, 0.6)',
                             'rgba(245, 158, 11, 0.6)', 'rgba(239, 68, 68, 0.6)',
@@ -666,7 +605,12 @@ class SkyAlertApp {
             });
         }
 
-        // Render RSSI Scatter Chart
+        const rssiPoints = (data.signal_points || []).map(p => ({
+            x: p.distance_km,
+            y: p.rssi,
+            label: p.label || `${p.callsign || p.hex} (${p.distance_km} km, ${p.rssi} dBFS)`
+        }));
+
         const rssiCtx = document.getElementById("rx-rssi-chart");
         if (rssiCtx) {
             if (this.rxRssiChart) this.rxRssiChart.destroy();
@@ -699,7 +643,7 @@ class SkyAlertApp {
                     },
                     plugins: {
                         tooltip: {
-                            callbacks: { label: (ctx) => ctx.raw.label }
+                            callbacks: { label: (ctx) => ctx.raw.label || `${ctx.raw.x} km, ${ctx.raw.y} dBFS` }
                         },
                         legend: { display: false }
                     }
@@ -708,61 +652,37 @@ class SkyAlertApp {
         }
     }
 
-    renderWeatherAnalytics(aircraftList) {
-        if (this.currentView !== "weather") return;
-
-        // Throttle updates to every 120 seconds to prevent continuous chart redrawing
+    renderReceiverAnalytics(aircraftList) {
+        if (this.currentView !== "receiver" || !aircraftList) return;
         const now = Date.now();
-        if (this.lastWeatherUpdate && (now - this.lastWeatherUpdate < 120000)) {
+        if (this.lastReceiverUpdate && (now - this.lastReceiverUpdate < 30000)) {
             return;
         }
-        this.lastWeatherUpdate = now;
+        this.lastReceiverUpdate = now;
+        this.loadReceiverView();
+    }
 
-        // Filter aircraft that have valid weather/altitude data
-        const wxData = aircraftList.filter(a => a.oat !== undefined || a.tat !== undefined || a.ws !== undefined);
+    renderWeatherData(data) {
+        if (this.currentView !== "weather" || !data) return;
 
         // Update Summary Cards
         const countEl = document.getElementById("wx-ac-count");
-        if (countEl) countEl.textContent = wxData.length;
-
-        let maxWs = 0;
-        let minTemp = 999;
-        
-        const thermalPoints = [];
-        const windPoints = [];
-
-        wxData.forEach(a => {
-            const alt = a.alt_baro || a.alt_geom;
-            if (!alt) return;
-
-            // Wind Shear Profile
-            if (a.ws !== undefined && a.ws !== null) {
-                const wsKmph = Math.round(a.ws * 1.852);
-                if (wsKmph > maxWs) maxWs = wsKmph;
-                windPoints.push({
-                    x: wsKmph,
-                    y: alt,
-                    label: `${a.callsign || a.icao_hex} (${wsKmph} km/h @ ${alt} ft)`
-                });
-            }
-
-            // Thermal Profile (Prefer OAT over TAT)
-            const temp = a.oat !== undefined && a.oat !== null ? a.oat : (a.tat !== undefined && a.tat !== null ? a.tat : null);
-            if (temp !== null) {
-                if (temp < minTemp) minTemp = temp;
-                thermalPoints.push({
-                    x: temp,
-                    y: alt,
-                    label: `${a.callsign || a.icao_hex} (${temp}°C @ ${alt} ft)`
-                });
-            }
-        });
+        if (countEl) countEl.textContent = data.aircraft_count || data.temperature_samples || 0;
 
         const maxWsEl = document.getElementById("wx-max-wind");
-        if (maxWsEl) maxWsEl.textContent = maxWs > 0 ? `${maxWs} km/h` : "-- km/h";
+        if (maxWsEl) {
+            const maxWind = data.max_wind_kmh || (data.max_jetstream_wind_ms ? Math.round(data.max_jetstream_wind_ms * 3.6) : 0);
+            maxWsEl.textContent = maxWind > 0 ? `${Math.round(maxWind)} km/h` : "-- km/h";
+        }
 
         const minTempEl = document.getElementById("wx-min-temp");
-        if (minTempEl) minTempEl.textContent = minTemp !== 999 ? `${minTemp} °C` : "-- °C";
+        if (minTempEl) {
+            const minTemp = data.min_temperature_c !== undefined ? data.min_temperature_c : data.average_oat_c;
+            minTempEl.textContent = minTemp !== undefined && minTemp !== 999 ? `${minTemp} °C` : "-- °C";
+        }
+
+        const thermalPoints = data.thermal_points || [];
+        const windPoints = data.wind_points || [];
 
         // Render Thermal Chart
         const thermalCtx = document.getElementById("wx-thermal-chart");
@@ -797,7 +717,9 @@ class SkyAlertApp {
                     },
                     plugins: {
                         tooltip: {
-                            callbacks: { label: (ctx) => ctx.raw.label }
+                            callbacks: { 
+                                label: (ctx) => ctx.raw.label || `${ctx.raw.x}°C @ ${ctx.raw.y} ft` 
+                            }
                         },
                         legend: { display: false }
                     }
@@ -838,13 +760,25 @@ class SkyAlertApp {
                     },
                     plugins: {
                         tooltip: {
-                            callbacks: { label: (ctx) => ctx.raw.label }
+                            callbacks: { 
+                                label: (ctx) => ctx.raw.label || `${ctx.raw.x} km/h @ ${ctx.raw.y} ft` 
+                            }
                         },
                         legend: { display: false }
                     }
                 }
             });
         }
+    }
+
+    renderWeatherAnalytics(aircraftList) {
+        if (this.currentView !== "weather" || !aircraftList) return;
+        const now = Date.now();
+        if (this.lastWeatherUpdate && (now - this.lastWeatherUpdate < 60000)) {
+            return;
+        }
+        this.lastWeatherUpdate = now;
+        this.loadWeatherView();
     }
 
     async fetchAircraftTable() {
@@ -1574,29 +1508,35 @@ class SkyAlertApp {
     async loadSessionsView() {
         const tbody = document.getElementById("global-sessions-table-body");
         if (!tbody) return;
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 30px; color: var(--text-muted);">Loading station visit sessions...</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 30px; color: var(--text-muted);">Loading station visit sessions...</td></tr>`;
 
         try {
-            const res = await fetch("/api/aircraft/1/sessions?limit=50"); // Fetch global sessions
+            const res = await fetch("/api/sessions?limit=100"); // Fetch global sessions across all aircraft
             const sessions = await res.json();
-            if (sessions.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 30px; color: var(--text-muted);">No visits recorded yet.</td></tr>`;
+            if (!Array.isArray(sessions) || sessions.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 30px; color: var(--text-muted);">No visits recorded yet.</td></tr>`;
                 return;
             }
             tbody.innerHTML = sessions.map(s => `
                 <tr>
                     <td style="font-weight: 600;">${s.date}</td>
+                    <td>
+                        <span class="reg-link" onclick="window.SkyAlertApp.openAircraftProfile('${s.icao_hex}')" style="font-weight: 700; color: var(--radar-cyan); cursor: pointer;">
+                            ${s.callsign && s.callsign !== '-' ? s.callsign : s.icao_hex}
+                        </span>
+                        <div style="font-size: 11px; color: var(--text-muted); font-family: monospace;">${s.icao_hex} • ${s.operator || s.aircraft_type || ''}</div>
+                    </td>
                     <td class="mono">${s.time_range}</td>
-                    <td class="mono" style="font-weight: 700; color: var(--radar-cyan);">${s.duration}</td>
+                    <td class="mono" style="font-weight: 700; color: var(--radar-green);">${s.duration}</td>
                     <td class="mono">${s.observation_count}</td>
-                    <td class="mono">${s.first_distance_km || '-'} km → ${s.last_distance_km || '-'} km</td>
-                    <td class="mono">${s.first_bearing || '-'}° → ${s.last_bearing || '-'}°</td>
+                    <td class="mono">${s.first_distance_km != null ? s.first_distance_km + ' km' : '-'} → ${s.last_distance_km != null ? s.last_distance_km + ' km' : '-'}</td>
+                    <td class="mono">${s.first_bearing != null ? s.first_bearing + '°' : '-'} → ${s.last_bearing != null ? s.last_bearing + '°' : '-'}</td>
                     <td><span class="live-badge ${s.status === 'ACTIVE' ? 'live' : 'recent'}">${s.status}</span></td>
                     <td><button class="sky-btn" onclick="window.SkyAlertApp.openSessionDetailModal(${s.id})">Inspect ↗</button></td>
                 </tr>
             `).join("");
         } catch (e) {
-            tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 30px; color: var(--radar-red);">Failed to load sessions.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 30px; color: var(--radar-red);">Failed to load sessions.</td></tr>`;
         }
     }
     async loadAlertsHistoryView() {
@@ -1773,18 +1713,26 @@ class SkyAlertApp {
         }
     }
 
-    loadWeatherView() {
-        // Weather is rendered reactively via renderWeatherAnalytics() inside fetchLiveAircraft().
-        // Force an immediate refresh by clearing the throttle timer, then trigger a live poll.
-        this.lastWeatherUpdate = null;
-        this.fetchLiveAircraft();
+    async loadWeatherView() {
+        this.lastWeatherUpdate = Date.now();
+        try {
+            const res = await fetch("/api/analytics/weather");
+            const data = await res.json();
+            this.renderWeatherData(data);
+        } catch (e) {
+            console.error("Failed to load weather analytics:", e);
+        }
     }
 
-    loadReceiverView() {
-        // Receiver analytics is rendered reactively via renderReceiverAnalytics() inside fetchLiveAircraft().
-        // Force an immediate refresh by clearing the throttle timer, then trigger a live poll.
-        this.lastReceiverUpdate = null;
-        this.fetchLiveAircraft();
+    async loadReceiverView() {
+        this.lastReceiverUpdate = Date.now();
+        try {
+            const res = await fetch("/api/analytics/receiver");
+            const data = await res.json();
+            this.renderReceiverData(data);
+        } catch (e) {
+            console.error("Failed to load receiver analytics:", e);
+        }
     }
 
     async loadTypesView() {

@@ -3,7 +3,7 @@ import sqlite3
 import json
 import logging
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from typing import Dict, Any, List, Optional, Tuple
 
 import yaml
@@ -42,6 +42,125 @@ def _get_configured_db_url() -> Optional[str]:
     return None
 
 
+import re
+from decimal import Decimal
+
+def _serialize_row_val(v):
+    if isinstance(v, (datetime, date)):
+        return v.isoformat()
+    if isinstance(v, Decimal):
+        return float(v) if "." in str(v) else int(v)
+    return v
+
+
+def _adapt_pg_query(query: str) -> str:
+    # Convert SQLite strftime('%s', A) - strftime('%s', B) to PostgreSQL epoch difference
+    pattern_diff = r"strftime\(\s*'%s'\s*,\s*([^)]+)\)\s*-\s*strftime\(\s*'%s'\s*,\s*([^)]+)\)"
+    query = re.sub(pattern_diff, r"(EXTRACT(EPOCH FROM \1) - EXTRACT(EPOCH FROM \2))", query, flags=re.IGNORECASE)
+    
+    # Convert single strftime('%s', A) to EXTRACT(EPOCH FROM A)
+    pattern_single = r"strftime\(\s*'%s'\s*,\s*([^)]+)\)"
+    query = re.sub(pattern_single, r"EXTRACT(EPOCH FROM \1)", query, flags=re.IGNORECASE)
+    
+    # Convert SQLite date('now', 'start of day') to CURRENT_DATE
+    query = re.sub(r"date\(\s*'now'\s*,\s*'start of day'\s*\)", "CURRENT_DATE", query, flags=re.IGNORECASE)
+
+    if "?" in query:
+        query = query.replace("?", "%s")
+    return query
+
+
+class DictLikeRow(dict):
+    """Row wrapper allowing both dictionary-key and integer-index access, with JSON-safe value serialization."""
+    def __init__(self, d, keys):
+        clean_d = {k: _serialize_row_val(v) for k, v in d.items()}
+        super().__init__(clean_d)
+        self._keys = keys
+
+    def __getitem__(self, item):
+        if isinstance(item, int):
+            if 0 <= item < len(self._keys):
+                return super().__getitem__(self._keys[item])
+            raise IndexError(f"Tuple index out of range: {item}")
+        return super().__getitem__(item)
+
+    def get(self, key, default=None):
+        if isinstance(key, int):
+            if 0 <= key < len(self._keys):
+                return super().get(self._keys[key], default)
+            return default
+        return super().get(key, default)
+
+
+class PgCursorWrapper:
+    def __init__(self, cur):
+        self._cur = cur
+
+    def execute(self, query, params=None):
+        adapted_query = _adapt_pg_query(query)
+        if params is not None:
+            return self._cur.execute(adapted_query, params)
+        return self._cur.execute(adapted_query)
+
+    def fetchone(self):
+        row = self._cur.fetchone()
+        if row is None:
+            return None
+        if isinstance(row, dict) and self._cur.description:
+            keys = [d[0] for d in self._cur.description]
+            return DictLikeRow(row, keys)
+        return row
+
+    def fetchall(self):
+        rows = self._cur.fetchall()
+        if not rows or not self._cur.description:
+            return rows
+        keys = [d[0] for d in self._cur.description]
+        return [DictLikeRow(r, keys) if isinstance(r, dict) else r for r in rows]
+
+    def __iter__(self):
+        for r in self.fetchall():
+            yield r
+
+    def __getattr__(self, name):
+        return getattr(self._cur, name)
+
+
+class PgConnectionWrapper:
+    def __init__(self, conn):
+        self._conn = conn
+
+    def cursor(self, *args, **kwargs):
+        cur = self._conn.cursor(*args, **kwargs)
+        return PgCursorWrapper(cur)
+
+    def execute(self, query, params=None):
+        cur = self.cursor()
+        cur.execute(query, params)
+        return cur
+
+    def commit(self):
+        return self._conn.commit()
+
+    def rollback(self):
+        return self._conn.rollback()
+
+    def close(self):
+        return self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            self._conn.rollback()
+        else:
+            self._conn.commit()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
 class DatabaseManager:
     """
     Unified relational Database Manager for SkyAlert.
@@ -77,7 +196,7 @@ class DatabaseManager:
                 import psycopg2
                 import psycopg2.extras
                 conn = psycopg2.connect(self.pg_url, cursor_factory=psycopg2.extras.RealDictCursor)
-                return conn
+                return PgConnectionWrapper(conn)
             except Exception as e:
                 logger.warning(f"PostgreSQL connection failed ({e}), falling back to SQLite: {SQLITE_DB_PATH}")
                 self.is_pg = False
@@ -95,6 +214,15 @@ class DatabaseManager:
         conn = self.get_connection()
         cur = conn.cursor()
         
+        if self.is_pg:
+            try:
+                cur.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'aircraft' LIMIT 1;")
+                if cur.fetchone():
+                    conn.close()
+                    return
+            except Exception:
+                pass
+
         id_type = "SERIAL PRIMARY KEY" if self.is_pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
         timestamp_type = "TIMESTAMPTZ" if self.is_pg else "TEXT"
 

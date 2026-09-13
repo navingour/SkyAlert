@@ -8,7 +8,7 @@ from app.db_manager import IST_TZ
 logger = logging.getLogger("skyalert.remote")
 
 # Previous/known-good Debian backend (fallback when the configured source is down).
-FALLBACK_REMOTE_BASE_URL = "http://192.168.0.118"
+FALLBACK_REMOTE_BASE_URL = "http://192.168.0.132"
 FALLBACK_API_BASE_URL = f"{FALLBACK_REMOTE_BASE_URL}/skyalert/api"
 FALLBACK_TAR1090_URL = f"{FALLBACK_REMOTE_BASE_URL}/tar1090/data/aircraft.json"
 
@@ -100,11 +100,11 @@ class SkyAlertRemoteClient:
             r_en = cur.fetchone()
             enriched = r_en[0] if r_en else 0
 
-            cur.execute("SELECT COUNT(*) FROM detection_sessions WHERE started_at >= date('now', 'start of day')")
+            cur.execute("SELECT COUNT(*) FROM detection_sessions WHERE started_at >= CURRENT_DATE")
             r_sess = cur.fetchone()
             sess_today = r_sess[0] if r_sess else 0
 
-            cur.execute("SELECT COUNT(DISTINCT aircraft_id) FROM detection_sessions WHERE started_at >= date('now', 'start of day')")
+            cur.execute("SELECT COUNT(DISTINCT aircraft_id) FROM detection_sessions WHERE started_at >= CURRENT_DATE")
             r_seen = cur.fetchone()
             seen_today = r_seen[0] if (r_seen and r_seen[0] > 0) else min(total_ac, sess_today)
 
@@ -153,7 +153,7 @@ class SkyAlertRemoteClient:
             self.tar1090_url,
             "http://127.0.0.1/tar1090/data/aircraft.json",
             "http://localhost/tar1090/data/aircraft.json",
-            "http://192.168.0.118/tar1090/data/aircraft.json",
+            "http://192.168.0.132/tar1090/data/aircraft.json",
             "http://127.0.0.1:8080/data/aircraft.json"
         ]
         

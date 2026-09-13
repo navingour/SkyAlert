@@ -10,6 +10,23 @@ from fastapi.responses import JSONResponse
 
 IST_TZ = timezone(timedelta(hours=5, minutes=30))
 
+def parse_to_ist(dt_val: Any) -> Optional[datetime]:
+    if not dt_val:
+        return None
+    try:
+        if isinstance(dt_val, str):
+            dt_str = dt_val.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(dt_str)
+        elif isinstance(dt_val, datetime):
+            dt = dt_val
+        else:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(IST_TZ)
+    except Exception:
+        return None
+
 from app.skyalert_remote_client import skyalert_remote
 from app.analytics_service import format_ist_datetime, format_duration, analytics_service
 from app.alert_lookup import AlertLookup
@@ -112,37 +129,35 @@ async def get_live():
         planes = skyalert_remote.get_live_aircraft()
         enriched_planes = []
 
-        def get_db_route(hex_code):
-            """Synchronous DB route lookup."""
+        # Pre-fetch all active routes from DB in a single fast query
+        active_routes = {}
+        try:
+            conn = db_manager.get_connection()
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT a.icao_hex, ds.origin_iata, ds.origin_icao, ds.destination_iata, ds.destination_icao
+                FROM detection_sessions ds
+                JOIN aircraft a ON ds.aircraft_id = a.id
+                WHERE ds.ended_at IS NULL
+            """)
+            for row in cur.fetchall():
+                hx = (row["icao_hex"] if isinstance(row, dict) else row[0] or "").upper()
+                o_iata = row["origin_iata"] if isinstance(row, dict) else row[1]
+                o_icao = row["origin_icao"] if isinstance(row, dict) else row[2]
+                d_iata = row["destination_iata"] if isinstance(row, dict) else row[3]
+                d_icao = row["destination_icao"] if isinstance(row, dict) else row[4]
+                if hx and (o_iata or o_icao or d_iata or d_icao):
+                    active_routes[hx] = {
+                        "origin_iata": o_iata, "origin_icao": o_icao,
+                        "destination_iata": d_iata, "destination_icao": d_icao
+                    }
+        except Exception as e:
+            logger.debug(f"Bulk route lookup failed: {e}")
+        finally:
             try:
-                conn = db_manager.get_connection()
-                cur = conn.cursor()
-                cur.execute(
-                    """
-                    SELECT ds.origin_iata, ds.origin_icao, ds.destination_iata, ds.destination_icao
-                    FROM detection_sessions ds
-                    JOIN aircraft a ON ds.aircraft_id = a.id
-                    WHERE a.icao_hex = ? AND ds.ended_at IS NULL LIMIT 1
-                    """,
-                    (hex_code,)
-                )
-                row = cur.fetchone()
-                if row:
-                    r_o_iata = row[0] if isinstance(row, (tuple, list)) else row["origin_iata"]
-                    r_o_icao = row[1] if isinstance(row, (tuple, list)) else row["origin_icao"]
-                    r_d_iata = row[2] if isinstance(row, (tuple, list)) else row["destination_iata"]
-                    r_d_icao = row[3] if isinstance(row, (tuple, list)) else row["destination_icao"]
-                    if r_o_iata or r_o_icao or r_d_iata or r_d_icao:
-                        return {"origin_iata": r_o_iata, "origin_icao": r_o_icao,
-                                "destination_iata": r_d_iata, "destination_icao": r_d_icao}
-            except Exception as e:
-                logger.debug(f"DB route lookup failed for {hex_code}: {e}")
-            finally:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
-            return None
+                conn.close()
+            except Exception:
+                pass
 
         # Enrich all planes first (synchronous, fast)
         for p in planes:
@@ -152,25 +167,23 @@ async def get_live():
             item["_hex"] = hex_code
             item["_callsign"] = callsign_code
 
-            # Try DB first
-            db_route = get_db_route(hex_code)
-            item["route"] = db_route  # may be None — ADSBDB fallback will fill below
+            # Check pre-fetched active routes or cache
+            item["route"] = active_routes.get(hex_code)
 
             alt = item.get("altitude_ft") or item.get("alt_baro")
             spd = item.get("speed_kts") or item.get("gs")
             rate = item.get("baro_rate")
-            item["flight_phase"] = analytics_service.classify_flight_phase(alt, spd, rate)
-            item["anomalies"] = analytics_service.detect_telemetry_anomalies(item)
-            enriched_planes.append(item)
-
-        # Concurrently fetch ADSBDB routes for any planes still missing a route
-        missing = [(i, item) for i, item in enumerate(enriched_planes) if item.get("route") is None]
-        if missing:
-            async def resolve(i, item):
-                route = await get_adsbdb_route_async(item["_callsign"], item["_hex"])
-                enriched_planes[i]["route"] = route
-
-            await asyncio.gather(*[resolve(i, item) for i, item in missing])
+        # Attach cached ADSBDB routes or dispatch background enrichment
+        for item in enriched_planes:
+            if not item.get("route"):
+                hex_u = item.get("_hex")
+                cs = item.get("_callsign")
+                key = cs if cs and cs != "-" else hex_u
+                if key and key in ADS_B_ROUTE_CACHE:
+                    item["route"] = ADS_B_ROUTE_CACHE[key]
+                elif key:
+                    # Async background fetch into cache for subsequent polls
+                    _route_executor.submit(_fetch_adsbdb_route_sync, cs, hex_u)
 
         # Clean up temp fields
         for item in enriched_planes:
@@ -648,49 +661,154 @@ async def get_aircraft_frequent_routes(id_or_hex: str):
     frequent = analytics_service.get_aircraft_route_aggregation(id_or_hex)
     return JSONResponse({"count": len(frequent), "frequent_routes": frequent})
 
+@router.get("/sessions")
+async def get_global_sessions(limit: int = 100):
+    """Returns recent station visit/detection sessions across all aircraft."""
+    try:
+        from app.db_manager import db_manager
+        conn = db_manager.get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT 
+                s.id, s.aircraft_id, s.started_at, s.last_observed_at, s.ended_at, s.observation_count,
+                s.first_distance_km, s.last_distance_km, s.first_bearing, s.last_bearing,
+                s.origin_iata, s.origin_icao, s.destination_iata, s.destination_icao,
+                a.icao_hex, a.callsign, a.registration, a.aircraft_type, a.operator,
+                e.operator_name, e.model, e.manufacturer
+            FROM detection_sessions s
+            JOIN aircraft a ON s.aircraft_id = a.id
+            LEFT JOIN aircraft_enrichment e ON a.id = e.aircraft_id
+            ORDER BY s.started_at DESC
+            LIMIT ?
+        """, (limit,))
+        rows = cur.fetchall()
+        conn.close()
+
+        sessions = []
+        for r in rows:
+            st = parse_to_ist(r["started_at"])
+            et = parse_to_ist(r["ended_at"] or r["last_observed_at"])
+            
+            dur_sec = max(0, int((et - st).total_seconds())) if (st and et) else 0
+            dur_str = format_duration(dur_sec)
+            
+            d_str = st.strftime("%d %b") if st else "Recent"
+            t_range = f"{st.strftime('%H:%M')} → {et.strftime('%H:%M IST')}" if (st and et) else "Active"
+            
+            is_active = r["ended_at"] is None and (datetime.now(timezone.utc) - (et.astimezone(timezone.utc) if et else datetime.now(timezone.utc))).total_seconds() < 600
+
+            sessions.append({
+                "id": r["id"],
+                "aircraft_id": r["aircraft_id"],
+                "icao_hex": (r["icao_hex"] or "").upper(),
+                "callsign": r["callsign"] or "-",
+                "registration": r["registration"] or r["icao_hex"],
+                "aircraft_type": r["aircraft_type"] or "-",
+                "operator": r["operator_name"] or r["operator"] or "-",
+                "date": d_str,
+                "time_range": t_range,
+                "started_at_ist": format_ist_datetime(r["started_at"]),
+                "ended_at_ist": format_ist_datetime(r["ended_at"] or r["last_observed_at"]),
+                "duration": dur_str,
+                "observation_count": r["observation_count"] or 1,
+                "first_distance_km": round(r["first_distance_km"], 1) if r["first_distance_km"] is not None else None,
+                "last_distance_km": round(r["last_distance_km"], 1) if r["last_distance_km"] is not None else None,
+                "first_bearing": round(r["first_bearing"], 1) if r["first_bearing"] is not None else None,
+                "last_bearing": round(r["last_bearing"], 1) if r["last_bearing"] is not None else None,
+                "status": "ACTIVE" if is_active else "COMPLETED",
+                "origin_iata": r["origin_iata"],
+                "origin_icao": r["origin_icao"],
+                "destination_iata": r["destination_iata"],
+                "destination_icao": r["destination_icao"]
+            })
+        return JSONResponse(sessions)
+    except Exception as e:
+        logger.exception(f"Error fetching global sessions: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: int):
-    """Returns session telemetry details."""
-    # Find active session or construct from live feed
-    live_planes = skyalert_remote.get_live_aircraft()
-    p = live_planes[0] if live_planes else {}
-    
-    return JSONResponse({
-        "id": session_id,
-        "aircraft_id": p.get("id", 1),
-        "icao_hex": p.get("icao_hex", "8014FE"),
-        "callsign": p.get("callsign", "AKJ916C"),
-        "registration": p.get("registration", "8014FE"),
-        "aircraft_type": p.get("aircraft_type", "A320"),
-        "manufacturer": "Airbus",
-        "model": "A320 251N",
-        "operator": "Air India Express",
-        "started_at_ist": "21 Aug 21:50 IST",
-        "ended_at_ist": "21 Aug 21:55 IST",
-        "duration": "5m",
-        "observation_count": 48,
-        "first_distance_km": 208.6,
-        "last_distance_km": 185.2,
-        "first_bearing": 275.5,
-        "last_bearing": 278.2,
-        "status": "ACTIVE",
-        "track": [
-            {
-                "id": 1,
-                "timestamp_ist": "21 Aug 21:50 IST",
-                "altitude_baro": 35000,
-                "altitude_geom": 37425,
-                "ground_speed_kts": 445,
-                "track": 74.6,
-                "latitude": 22.7858,
-                "longitude": 84.7058,
-                "vertical_rate": 0,
-                "squawk": "0360",
-                "distance_km": 206.2,
-                "bearing": 275.5
-            }
-        ]
-    })
+    """Returns session telemetry details from PostgreSQL database."""
+    try:
+        from app.db_manager import db_manager
+        conn = db_manager.get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT 
+                s.id, s.aircraft_id, s.started_at, s.last_observed_at, s.ended_at, s.observation_count,
+                s.first_distance_km, s.last_distance_km, s.first_bearing, s.last_bearing,
+                s.origin_iata, s.origin_icao, s.destination_iata, s.destination_icao,
+                a.icao_hex, a.callsign, a.registration, a.aircraft_type, a.operator,
+                e.operator_name, e.model, e.manufacturer
+            FROM detection_sessions s
+            JOIN aircraft a ON s.aircraft_id = a.id
+            LEFT JOIN aircraft_enrichment e ON a.id = e.aircraft_id
+            WHERE s.id = ?
+        """, (session_id,))
+        s = cur.fetchone()
+        if not s:
+            conn.close()
+            return JSONResponse({"error": "Session not found"}, status_code=404)
+
+        # Query telemetry observations for this session
+        obs_time_col = "observed_at" if db_manager.is_pg else "timestamp"
+        vert_col = "barometric_rate" if db_manager.is_pg else "vertical_rate"
+        cur.execute(f"""
+            SELECT id, {obs_time_col} as obs_time, altitude_baro, altitude_geom, ground_speed, track,
+                   latitude, longitude, {vert_col} as vert_rate, squawk, distance_km, bearing
+            FROM observations
+            WHERE session_id = ?
+            ORDER BY {obs_time_col} ASC
+            LIMIT 500
+        """, (session_id,))
+        obs_rows = cur.fetchall()
+        conn.close()
+
+        track = []
+        for o in obs_rows:
+            track.append({
+                "id": o["id"],
+                "timestamp_ist": format_ist_datetime(o["obs_time"]),
+                "altitude_baro": o["altitude_baro"],
+                "altitude_geom": o["altitude_geom"],
+                "ground_speed_kts": o["ground_speed"],
+                "track": o["track"],
+                "latitude": o["latitude"],
+                "longitude": o["longitude"],
+                "vertical_rate": o["vert_rate"] or 0,
+                "squawk": o["squawk"] or "",
+                "distance_km": o["distance_km"],
+                "bearing": o["bearing"]
+            })
+
+        st = parse_to_ist(s["started_at"])
+        et = parse_to_ist(s["ended_at"] or s["last_observed_at"])
+        dur_sec = max(0, int((et - st).total_seconds())) if (st and et) else 0
+
+        return JSONResponse({
+            "id": s["id"],
+            "aircraft_id": s["aircraft_id"],
+            "icao_hex": (s["icao_hex"] or "").upper(),
+            "callsign": s["callsign"] or "-",
+            "registration": s["registration"] or s["icao_hex"],
+            "aircraft_type": s["aircraft_type"] or "Unknown",
+            "manufacturer": s["manufacturer"] or "Unknown",
+            "model": s["model"] or s["aircraft_type"] or "Unknown",
+            "operator": s["operator_name"] or s["operator"] or "Unknown Operator",
+            "started_at_ist": format_ist_datetime(s["started_at"]),
+            "ended_at_ist": format_ist_datetime(s["ended_at"] or s["last_observed_at"]),
+            "duration": format_duration(dur_sec),
+            "observation_count": s["observation_count"] or len(track),
+            "first_distance_km": s["first_distance_km"],
+            "last_distance_km": s["last_distance_km"],
+            "first_bearing": s["first_bearing"],
+            "last_bearing": s["last_bearing"],
+            "status": "COMPLETED" if s["ended_at"] else "ACTIVE",
+            "track": track
+        })
+    except Exception as e:
+        logger.exception(f"Error fetching session {session_id}: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @router.get("/analytics/traffic")
 async def get_traffic():
@@ -976,7 +1094,8 @@ async def get_operators(timeframe: str = Query("lifetime"), limit: int = 150):
             }
 
     # Timeframe adjustment factor for filtering views
-    tf_scale = {'today': 0.15, 'week': 0.4, 'month': 0.8, 'lifetime': 1.0}.get(timeframe.lower(), 1.0)
+    tf_str = str(timeframe or "lifetime").lower() if isinstance(timeframe, str) else "lifetime"
+    tf_scale = {'today': 0.15, 'week': 0.4, 'month': 0.8, 'lifetime': 1.0}.get(tf_str, 1.0)
 
     results = list(ops.values())
     results.sort(key=lambda x: x['total_visits'], reverse=True)
@@ -1138,8 +1257,7 @@ async def get_types(limit: int = 100):
             LEFT JOIN aircraft_enrichment e ON a.id = e.aircraft_id
             WHERE (a.aircraft_type IS NOT NULL AND a.aircraft_type != '' AND a.aircraft_type != '-')
                OR (e.aircraft_type IS NOT NULL AND e.aircraft_type != '' AND e.aircraft_type != '-')
-               OR (e.icao_aircraft_type IS NOT NULL AND e.icao_aircraft_type != '' AND e.icao_aircraft_type != '-')
-            GROUP BY type_code
+            GROUP BY 1, 2, 3
         """)
         for row in cur.fetchall():
             tc = row["type_code"]
@@ -1332,7 +1450,8 @@ async def get_alerts_history(limit: int = 100):
 async def get_rare_aircraft(max_visits: int = Query(5, ge=1, le=100)):
     """Consumes GET http://192.168.0.118/skyalert/api/rare-aircraft?max_visits={max_visits} and enriches cards."""
     try:
-        data = skyalert_remote.get_rare_aircraft(max_visits=max_visits)
+        max_visits_val = int(max_visits) if isinstance(max_visits, (int, str)) and str(max_visits).isdigit() else 5
+        data = skyalert_remote.get_rare_aircraft(max_visits=max_visits_val)
         if data.get("rare_aircraft"):
             data["rare_aircraft"] = [aircraft_enricher.enrich_rare_item(item) for item in data["rare_aircraft"]]
         return JSONResponse(data)
@@ -1346,7 +1465,7 @@ async def get_system_status():
     return JSONResponse({
         "engine": True,
         "receiver": True,
-        "remote_api": "http://192.168.0.118/skyalert/api/dashboard",
+        "remote_api": "http://192.168.0.132/skyalert/api/dashboard",
         "aircraft_seen_today": dash.get("aircraft_seen_today", 0),
         "station_time_ist": dash.get("station_time_ist", "")
     })

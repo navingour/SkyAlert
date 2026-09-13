@@ -4,7 +4,7 @@
 
 # Live ADS-B data feed (tar1090 / readsb aircraft.json)
 tar1090:
-  url: "http://192.168.0.118/tar1090/data/aircraft.json"
+  url: "http://192.168.0.132/tar1090/data/aircraft.json"
   poll_interval_seconds: 10
 
 # Station location (used for distance/bearing). Defaults to Kolkata, India.

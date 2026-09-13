@@ -53,7 +53,7 @@ fi
 # Start the web dashboard
 echo "  [2/2] Starting web dashboard on port 8080..."
 echo ""
-exec uvicorn web.main:app --host 0.0.0.0 --port 8080
+exec python3 -m uvicorn web.main:app --host 0.0.0.0 --port 8080
 
 # Cleanup on exit
 trap "kill $BACKEND_PID 2>/dev/null" EXIT

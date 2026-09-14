@@ -1762,7 +1762,6 @@ async def send_telegram_test_message(request: Request):
     try:
         from app.telegram import TelegramNotifier
         from datetime import datetime
-        import pytz
 
         body = await request.json()
         token = body.get("bot_token", "").strip()
@@ -1782,7 +1781,7 @@ async def send_telegram_test_message(request: Request):
 
         notifier = TelegramNotifier(token=token, chat_id=chat_id, photo_enabled=body.get("photo_enabled", True))
         
-        now_ist = datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%d %b %Y %H:%M:%S IST")
+        now_ist = datetime.now(IST_TZ).strftime("%d %b %Y %H:%M:%S IST")
 
         test_msg = f"""<b>⚡ SKYALERT · TEST NOTIFICATION</b>
 

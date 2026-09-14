@@ -22,6 +22,10 @@ class SkyAlertApp {
         };
         this.rareVisitsFilter = 5;
         this.rareViewMode = 'cards';
+        this.rareScenario = 'all';
+        this.rareSearchQuery = '';
+        this.rawRareAircraftList = [];
+        this.rareSearchDebounceTimer = null;
         this.operatorTimeframe = 'lifetime';
         this.dashboardTimeframe = 'today';
         this.rarePollInterval = null;
@@ -123,6 +127,18 @@ class SkyAlertApp {
                 this.aircraftTableParams.enriched = e.target.value;
                 this.aircraftTableParams.page = 1;
                 this.fetchAircraftTable();
+            });
+        }
+
+        // Rare Aircraft Search Input
+        const rareSearch = document.getElementById("rare-search-input");
+        if (rareSearch) {
+            rareSearch.addEventListener("input", (e) => {
+                clearTimeout(this.rareSearchDebounceTimer);
+                this.rareSearchDebounceTimer = setTimeout(() => {
+                    this.rareSearchQuery = (e.target.value || '').trim();
+                    this.renderFilteredRareAircraft();
+                }, 200);
             });
         }
     }
@@ -2124,6 +2140,18 @@ class SkyAlertApp {
         this.loadRareAircraft(this.rareVisitsFilter);
     }
 
+    setRareScenario(scenario) {
+        this.rareScenario = scenario;
+        document.querySelectorAll('.rare-scenario-btn').forEach(btn => {
+            if (btn.dataset.scenario === scenario) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+        this.renderFilteredRareAircraft();
+    }
+
     setRareVisitsFilter(visits) {
         this.rareVisitsFilter = visits;
         document.querySelectorAll('.rare-filter-btn').forEach(btn => {
@@ -2155,14 +2183,16 @@ class SkyAlertApp {
             const data = await res.json();
             if (!data || !Array.isArray(data.rare_aircraft)) throw new Error('Invalid response format');
 
-            // Update summary counts based on "visits" field
-            const veryRare = data.rare_aircraft.filter(a => (a.visits ?? a.visit_count ?? 1) === 1).length;
-            const rare = data.rare_aircraft.filter(a => (a.visits ?? a.visit_count ?? 2) === 2).length;
-            const occasional = data.rare_aircraft.filter(a => {
+            this.rawRareAircraftList = data.rare_aircraft || [];
+
+            // Update summary statistics area
+            const veryRare = this.rawRareAircraftList.filter(a => (a.visits ?? a.visit_count ?? 1) === 1).length;
+            const rare = this.rawRareAircraftList.filter(a => (a.visits ?? a.visit_count ?? 2) === 2).length;
+            const occasional = this.rawRareAircraftList.filter(a => {
                 const v = a.visits ?? a.visit_count ?? 0;
                 return v >= 3 && v <= 5;
             }).length;
-            const total = data.rare_aircraft.length;
+            const total = this.rawRareAircraftList.length;
 
             const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
             setText('rare-sum-very-rare', veryRare);
@@ -2170,48 +2200,129 @@ class SkyAlertApp {
             setText('rare-sum-occasional', occasional);
             setText('rare-sum-total', total);
 
-            if (total === 0) {
-                if (emptyEl) emptyEl.style.display = 'block';
-                if (gridEl) gridEl.innerHTML = '';
-            } else {
-                if (emptyEl) emptyEl.style.display = 'none';
-                if (this.rareViewMode === 'table') {
-                    gridEl.innerHTML = `
-                    <div class="table-responsive">
-                        <table class="sky-table rare-list-table">
-                            <thead>
-                                <tr>
-                                    <th>Rarity</th>
-                                    <th>Callsign</th>
-                                    <th>ICAO Hex</th>
-                                    <th>Registration</th>
-                                    <th>Aircraft</th>
-                                    <th>Operator</th>
-                                    <th>Country</th>
-                                    <th>First Seen</th>
-                                    <th>Last Seen</th>
-                                    <th style="text-align:center">Visits</th>
-                                    <th style="text-align:center">Obs.</th>
-                                    <th style="text-align:center">Duration</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${data.rare_aircraft.map(ac => this.generateRareRowHtml(ac)).join('')}
-                            </tbody>
-                        </table>
-                    </div>`;
-                } else {
-                    gridEl.innerHTML = `
-                    <div class="live-aircraft-grid">
-                        ${data.rare_aircraft.map(ac => this.generateRareCardHtml(ac)).join('')}
-                    </div>`;
-                }
-            }
+            // Compute Scenario Tab Counts
+            const isHeli = (a) => a.is_helicopter || (a.aircraft_type && ['B429', 'B206', 'EC45', 'EC35', 'H125', 'R44', 'R66', 'AS50', 'A109'].includes(a.aircraft_type.toUpperCase())) || (a.manufacturer && a.manufacturer.toLowerCase().includes('bell'));
+            const isMil = (a) => a.is_military || (a.operator && a.operator.toLowerCase().includes('air force'));
+            const isOneTime = (a) => (a.visits ?? a.visit_count ?? a.total_sessions ?? 1) === 1;
+            const isHeavy = (a) => a.is_heavy || (a.model && (a.model.includes('380') || a.model.includes('747') || a.model.includes('777') || a.model.includes('787') || a.model.includes('C17')));
+            const isWl = (a) => a.is_watchlist;
+
+            const countAll = this.rawRareAircraftList.length;
+            const countHeli = this.rawRareAircraftList.filter(isHeli).length;
+            const countMil = this.rawRareAircraftList.filter(isMil).length;
+            const countOneTime = this.rawRareAircraftList.filter(isOneTime).length;
+            const countHeavy = this.rawRareAircraftList.filter(isHeavy).length;
+            const countWatchlist = this.rawRareAircraftList.filter(isWl).length;
+
+            const setPill = (id, count) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = count > 0 ? count : '0';
+            };
+            setPill('rare-count-all', countAll);
+            setPill('rare-count-helicopter', countHeli);
+            setPill('rare-count-military', countMil);
+            setPill('rare-count-one_time', countOneTime);
+            setPill('rare-count-heavy', countHeavy);
+            setPill('rare-count-watchlist', countWatchlist);
+
+            this.renderFilteredRareAircraft();
+
         } catch (e) {
             console.error('Error loading rare aircraft:', e);
             if (errorEl) errorEl.style.display = 'block';
         } finally {
             if (loadingEl) loadingEl.style.display = 'none';
+        }
+    }
+
+    renderFilteredRareAircraft() {
+        const gridEl = document.getElementById('rare-aircraft-cards-grid');
+        const emptyEl = document.getElementById('rare-empty-state');
+        if (!gridEl) return;
+
+        let list = this.rawRareAircraftList || [];
+
+        const isHeli = (a) => a.is_helicopter || (a.aircraft_type && ['B429', 'B206', 'EC45', 'EC35', 'H125', 'R44', 'R66', 'AS50', 'A109'].includes(a.aircraft_type.toUpperCase())) || (a.manufacturer && a.manufacturer.toLowerCase().includes('bell'));
+        const isMil = (a) => a.is_military || (a.operator && a.operator.toLowerCase().includes('air force'));
+        const isOneTime = (a) => (a.visits ?? a.visit_count ?? a.total_sessions ?? 1) === 1;
+        const isHeavy = (a) => a.is_heavy || (a.model && (a.model.includes('380') || a.model.includes('747') || a.model.includes('777') || a.model.includes('787') || a.model.includes('C17')));
+        const isWl = (a) => a.is_watchlist;
+
+        // 1. Scenario Filter
+        if (this.rareScenario === 'helicopter') {
+            list = list.filter(isHeli);
+        } else if (this.rareScenario === 'military') {
+            list = list.filter(isMil);
+        } else if (this.rareScenario === 'one_time') {
+            list = list.filter(isOneTime);
+        } else if (this.rareScenario === 'heavy') {
+            list = list.filter(isHeavy);
+        } else if (this.rareScenario === 'watchlist') {
+            list = list.filter(isWl);
+        }
+
+        // 2. Search Query Filter
+        if (this.rareSearchQuery) {
+            const q = this.rareSearchQuery.toUpperCase();
+            list = list.filter(a => {
+                const hex = (a.icao_hex || '').toUpperCase();
+                const callsign = (a.callsign || '').toUpperCase();
+                const reg = (a.registration || '').toUpperCase();
+                const op = (a.operator || '').toUpperCase();
+                const mdl = (a.model || '').toUpperCase();
+                const mfr = (a.manufacturer || '').toUpperCase();
+                const typ = (a.aircraft_type || '').toUpperCase();
+                const ctry = (a.country || '').toUpperCase();
+                return hex.includes(q) || callsign.includes(q) || reg.includes(q) ||
+                       op.includes(q) || mdl.includes(q) || mfr.includes(q) ||
+                       typ.includes(q) || ctry.includes(q);
+            });
+        }
+
+        if (list.length === 0) {
+            if (emptyEl) {
+                emptyEl.style.display = 'block';
+                const msgEl = emptyEl.querySelector('span:last-child');
+                if (msgEl) {
+                    msgEl.textContent = this.rareSearchQuery 
+                        ? `No rare aircraft matching "${this.rareSearchQuery}".`
+                        : `No rare aircraft in selected category.`;
+                }
+            }
+            gridEl.innerHTML = '';
+        } else {
+            if (emptyEl) emptyEl.style.display = 'none';
+            if (this.rareViewMode === 'table') {
+                gridEl.innerHTML = `
+                <div class="table-responsive">
+                    <table class="sky-table rare-list-table">
+                        <thead>
+                            <tr>
+                                <th>Category</th>
+                                <th>Callsign</th>
+                                <th>ICAO Hex</th>
+                                <th>Registration</th>
+                                <th>Aircraft</th>
+                                <th>Operator</th>
+                                <th>Country</th>
+                                <th>First Seen</th>
+                                <th>Last Seen</th>
+                                <th style="text-align:center">Visits</th>
+                                <th style="text-align:center">Obs.</th>
+                                <th style="text-align:center">Duration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${list.map(ac => this.generateRareRowHtml(ac)).join('')}
+                        </tbody>
+                    </table>
+                </div>`;
+            } else {
+                gridEl.innerHTML = `
+                <div class="live-aircraft-grid">
+                    ${list.map(ac => this.generateRareCardHtml(ac)).join('')}
+                </div>`;
+            }
         }
     }
 

@@ -653,7 +653,14 @@ class SkyAlertRemoteClient:
                 'H125', 'H130', 'H135', 'H145', 'H175', 'H225', 'UH60', 'CH47', 'AH64', 'ALH'
             }
             heli_keywords = ['BELL', 'SIKORSKY', 'EUROCOPTER', 'AGUSTA', 'ROBINSON', 'HELICOPTER', 'ROTORCRAFT', 'HAL']
-            military_keywords = ["AIR FORCE", "NAVY", "ARMY", "COAST GUARD", "NASA", "MILITARY", "BORDER SECURITY", "BSF", "IAF", "DEFENCE"]
+            military_keywords = ["AIR FORCE", "NAVY", "ARMY", "COAST GUARD", "NASA", "MILITARY", "BORDER SECURITY", "BSF", "IAF", "DEFENCE", "ROYAL AIR FORCE"]
+            heavy_types = {
+                'A388', 'A380', 'B744', 'B748', 'B747', 'A343', 'A345', 'A346', 'A359', 'A35K', 
+                'B772', 'B773', 'B77W', 'B77L', 'B788', 'B789', 'B78X', 'A124', 'A225', 'C17', 
+                'C5M', 'IL76', 'AN12', 'AN32', 'GLF5', 'GLF6', 'G550', 'G650', 'FA7X', 'FA8X', 
+                'GLEX', 'CL60', 'C680', 'C750', 'A3ST', 'BLCF', 'E3TF', 'P8', 'DC10', 'MD11'
+            }
+            heavy_keywords = ['747', '380', '777', '787', '350', '340', 'GULFSTREAM', 'FALCON', 'GLOBAL EXPRESS', 'CHALLENGER', 'LEARJET', 'CITATION', 'EMBRAER LEGACY', 'PRAETOR', 'LINEAGE', 'ANTONOV', 'ILYUSHIN']
 
             conn = db_manager.get_connection()
             cur = conn.cursor()
@@ -697,8 +704,16 @@ class SkyAlertRemoteClient:
                 
                 is_mil = (
                     any(m in op for m in military_keywords) or
-                    any(f in callsign for f in ["IAF", "RCH", "RMF", "BAF", "RCAF", "USAF"])
+                    any(f in callsign for f in ["IAF", "RCH", "RMF", "BAF", "RCAF", "USAF", "RRR", "ASY"])
                 )
+                
+                is_heavy = (
+                    any(ht in ac_type for ht in heavy_types) or
+                    any(hk in model for hk in heavy_keywords) or
+                    any(hk in mfr for hk in heavy_keywords)
+                )
+                
+                is_one_time = (visits == 1)
                 
                 is_special_type = any(t in ac_type for t in rare_types) if rare_types else False
                 is_watchlist = (
@@ -716,6 +731,8 @@ class SkyAlertRemoteClient:
                     priority += 80
                 if is_special_type or is_watchlist:
                     priority += 60
+                if is_heavy:
+                    priority += 40
                 if row["model"] or row["operator_name"]:
                     priority += 20
                 # Lower visits = higher rarity
@@ -726,6 +743,8 @@ class SkyAlertRemoteClient:
                     rarity_badge = "🚁 Helicopter"
                 elif is_mil:
                     rarity_badge = "⚔️ Military"
+                elif is_heavy and ("380" in model or "747" in model or "C17" in ac_type or "A388" in ac_type):
+                    rarity_badge = "✈️ Heavy Airframe"
                 elif visits == 1:
                     rarity_badge = "⭐ Very Rare"
                 elif visits == 2:
@@ -752,6 +771,9 @@ class SkyAlertRemoteClient:
                     "rarity_badge": rarity_badge,
                     "is_helicopter": is_heli,
                     "is_military": is_mil,
+                    "is_heavy": is_heavy,
+                    "is_one_time": is_one_time,
+                    "is_watchlist": is_watchlist,
                     "_priority": priority
                 })
             

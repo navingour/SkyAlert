@@ -1331,6 +1331,57 @@ a:hover {
   border: 1px solid rgba(139, 92, 246, 0.4);
 }
 
+/* Rare Scenario Filter Tabs */
+.rare-scenario-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.rare-scenario-btn {
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  font-weight: 500;
+}
+
+.rare-scenario-btn:hover {
+  background-color: var(--bg-card-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.rare-scenario-btn.active {
+  background-color: rgba(56, 189, 248, 0.15);
+  border-color: var(--radar-cyan);
+  color: var(--radar-cyan);
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
+}
+
+.rare-tab-pill {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.rare-scenario-btn.active .rare-tab-pill {
+  background-color: rgba(56, 189, 248, 0.25);
+  color: var(--radar-cyan);
+}
+
 .rare-visits-pill {
   font-size: 11px;
   font-family: var(--font-mono);

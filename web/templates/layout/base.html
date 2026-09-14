@@ -810,6 +810,37 @@
                                 <span class="rare-sum-sub">Matching current filter</span>
                             </div>
                         </div>
+
+                        <!-- Filter Controls Bar (Search + Scenario Tabs) -->
+                        <div class="rare-controls-bar" style="margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border-subtle); display: flex; gap: 14px; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                            <!-- Search Input -->
+                            <div style="position: relative; flex: 1; min-width: 260px; max-width: 440px;">
+                                <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 13px; pointer-events: none;">🔍</span>
+                                <input type="text" class="sky-input" id="rare-search-input" placeholder="Filter rare ICAO, Reg, Callsign, Operator, Model..." style="width: 100%; padding-left: 34px; font-size: 13px;">
+                            </div>
+
+                            <!-- Scenario Filter Tabs -->
+                            <div class="rare-scenario-tabs" style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+                                <button class="sky-btn rare-scenario-btn active" data-scenario="all" onclick="window.SkyAlertApp.setRareScenario('all')">
+                                    ⭐ All <span class="rare-tab-pill" id="rare-count-all">0</span>
+                                </button>
+                                <button class="sky-btn rare-scenario-btn" data-scenario="helicopter" onclick="window.SkyAlertApp.setRareScenario('helicopter')">
+                                    🚁 Helicopters <span class="rare-tab-pill" id="rare-count-helicopter">0</span>
+                                </button>
+                                <button class="sky-btn rare-scenario-btn" data-scenario="military" onclick="window.SkyAlertApp.setRareScenario('military')">
+                                    ⚔️ Military & Gov <span class="rare-tab-pill" id="rare-count-military">0</span>
+                                </button>
+                                <button class="sky-btn rare-scenario-btn" data-scenario="one_time" onclick="window.SkyAlertApp.setRareScenario('one_time')">
+                                    🌟 1-Time Visitors <span class="rare-tab-pill" id="rare-count-one_time">0</span>
+                                </button>
+                                <button class="sky-btn rare-scenario-btn" data-scenario="heavy" onclick="window.SkyAlertApp.setRareScenario('heavy')">
+                                    ✈️ Heavies & Jets <span class="rare-tab-pill" id="rare-count-heavy">0</span>
+                                </button>
+                                <button class="sky-btn rare-scenario-btn" data-scenario="watchlist" onclick="window.SkyAlertApp.setRareScenario('watchlist')">
+                                    👁️ Watchlist <span class="rare-tab-pill" id="rare-count-watchlist">0</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

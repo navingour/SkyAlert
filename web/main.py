@@ -47,11 +47,17 @@ app = FastAPI(
 )
 
 
+from fastapi.responses import FileResponse
+
 app.mount(
     "/static",
     StaticFiles(directory=BASE_DIR / "static"),
     name="static"
 )
+
+@app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
+async def favicon():
+    return FileResponse(BASE_DIR / "static" / "img" / "favicon-32.png")
 
 # API router
 app.include_router(api.router)

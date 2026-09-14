@@ -193,6 +193,7 @@ class SkyAlertApp {
             "rare": ["Rare Aircraft", "Aircraft rarely detected by this receiver"],
             "rare-aircraft": ["Rare Aircraft", "Aircraft rarely detected by this receiver"],
             "unknown": ["Unknown Aircraft", "Un-enriched Airframes & Resolution Queue"],
+            "telegram": ["Telegram Alerts & Target Tracking", "Bot Configuration, Proximity Triggers & Automated Broadcasts"],
             "settings": ["System Configuration", "Station Parameters & Alerting Rules"],
             "aircraft-profile": ["Aircraft Intelligence", "Comprehensive Airframe Profile & Visit History"]
         };
@@ -257,6 +258,8 @@ class SkyAlertApp {
                     }
                 }, 60000);
             }
+        } else if (viewName === "telegram") {
+            this.loadTelegramSettings();
         } else if (viewName === "unknown") {
             this.loadUnknownView();
         }
@@ -2533,10 +2536,443 @@ class SkyAlertApp {
         }
     }
 
+    // =========================================================================
+    // TELEGRAM CONFIGURATION & TARGET TRACKING AUTOMATION
+    // =========================================================================
+
+    async loadTelegramSettings() {
+        try {
+            const res = await fetch('/api/telegram/config');
+            const data = await res.json();
+            if (data.status !== 'success') {
+                console.error("Failed to load Telegram config:", data);
+                return;
+            }
+
+            // 1. Telegram Bot Settings
+            const tg = data.telegram || {};
+            const masterEnable = document.getElementById('tg-master-enable');
+            const botToken = document.getElementById('tg-bot-token');
+            const chatId = document.getElementById('tg-chat-id');
+            const photoEnabled = document.getElementById('tg-photo-enabled');
+            const silent = document.getElementById('tg-silent-notifications');
+
+            if (masterEnable) masterEnable.checked = !!tg.enabled;
+            if (botToken) botToken.value = tg.bot_token || '';
+            if (chatId) chatId.value = tg.chat_id || '';
+            if (photoEnabled) photoEnabled.checked = tg.photo_enabled !== false;
+            if (silent) silent.checked = !!tg.silent;
+
+            // 2. Scenario Alert Triggers
+            const alerts = data.alerts || {};
+            const squawk = document.getElementById('tg-alert-squawk');
+            const military = document.getElementById('tg-alert-military');
+            const gov = document.getElementById('tg-alert-government');
+            const helis = document.getElementById('tg-alert-helicopters');
+            const rare = document.getElementById('tg-alert-rare');
+            const formation = document.getElementById('tg-alert-formation');
+            const geofence = document.getElementById('tg-alert-geofence');
+
+            if (squawk) squawk.checked = alerts.squawk !== false;
+            if (military) military.checked = alerts.military !== false;
+            if (gov) gov.checked = alerts.government !== false;
+            if (helis) helis.checked = alerts.helicopters !== false;
+            if (rare) rare.checked = alerts.rare_aircraft !== false;
+            if (formation) formation.checked = !!alerts.formation;
+            if (geofence) geofence.checked = !!alerts.geofence;
+
+            // 3. Geofence & Station Settings
+            const geo = data.geofence || {};
+            const stLat = document.getElementById('tg-station-lat');
+            const stLon = document.getElementById('tg-station-lon');
+            const radiusSlider = document.getElementById('tg-radius-slider');
+            const radiusVal = document.getElementById('tg-radius-val');
+            const geoName = document.getElementById('tg-geofence-name');
+
+            if (stLat) stLat.value = geo.latitude || 22.5726;
+            if (stLon) stLon.value = geo.longitude || 88.3639;
+            if (radiusSlider) {
+                radiusSlider.value = geo.radius_km || 50;
+                if (radiusVal) radiusVal.textContent = (geo.radius_km || 50) + ' km';
+            }
+            if (geoName) geoName.value = geo.name || 'Station Primary Vicinity Zone';
+
+            // 4. Thresholds
+            const th = data.thresholds || {};
+            const thEnable = document.getElementById('tg-thresholds-enabled');
+            const minAlt = document.getElementById('tg-min-altitude');
+            const maxSpd = document.getElementById('tg-max-speed');
+
+            if (thEnable) thEnable.checked = !!th.enabled;
+            if (minAlt) minAlt.value = th.min_altitude || 5000;
+            if (maxSpd) maxSpd.value = th.max_speed || 520;
+
+            // 5. Watchlist & Tracked Targets
+            this.renderTelegramTargets(data.watchlist || {});
+
+            // Auto-verify bot connection
+            if (tg.bot_token) {
+                this.verifyTelegramBotToken(false);
+            } else {
+                const pill = document.getElementById('tg-bot-status-pill');
+                if (pill) {
+                    pill.className = 'tg-bot-status-pill disconnected';
+                    pill.innerHTML = '<span class="status-dot"></span> Not Configured';
+                }
+            }
+
+        } catch (e) {
+            console.error("Error loading Telegram configuration:", e);
+        }
+    }
+
+    renderTelegramTargets(watchlist) {
+        const tbody = document.getElementById('tg-targets-table-body');
+        if (!tbody) return;
+
+        let rowsHtml = '';
+        const targets = watchlist.targets || [];
+        const hexes = watchlist.hex || [];
+        const regs = watchlist.registrations || [];
+        const flights = watchlist.flights || [];
+        const ops = watchlist.operators || [];
+
+        // Build list of all targets
+        const combined = [...targets];
+
+        // Include legacy hex entries if not already in targets
+        hexes.forEach(h => {
+            if (!combined.some(t => t.type === 'hex' && t.value.toUpperCase() === h.toUpperCase())) {
+                combined.push({ type: 'hex', value: h, label: `ICAO Hex: ${h}`, radius_km: 0, enabled: true });
+            }
+        });
+
+        // Include legacy reg entries
+        regs.forEach(r => {
+            if (!combined.some(t => t.type === 'reg' && t.value.toUpperCase() === r.toUpperCase())) {
+                combined.push({ type: 'reg', value: r, label: `Tail: ${r}`, radius_km: 0, enabled: true });
+            }
+        });
+
+        // Include legacy flight entries
+        flights.forEach(f => {
+            if (!combined.some(t => t.type === 'flight' && t.value.toUpperCase() === f.toUpperCase())) {
+                combined.push({ type: 'flight', value: f, label: `Flight Prefix: ${f}`, radius_km: 0, enabled: true });
+            }
+        });
+
+        // Include legacy operator entries
+        ops.forEach(o => {
+            if (!combined.some(t => t.type === 'operator' && t.value.toLowerCase() === o.toLowerCase())) {
+                combined.push({ type: 'operator', value: o, label: `Operator: ${o}`, radius_km: 0, enabled: true });
+            }
+        });
+
+        if (combined.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">
+                        <span style="font-size: 20px;">🎯</span>
+                        <div style="font-weight: 600; margin-top: 6px;">No target tracking rules configured.</div>
+                        <div style="font-size: 12px; color: var(--text-dim); margin-top: 2px;">
+                            Add a target above or use a Quick Preset to receive alerts when aircraft enter your vicinity.
+                        </div>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        combined.forEach(t => {
+            const type = (t.type || 'hex').toLowerCase();
+            const val = t.value || '';
+            const label = t.label || val;
+            const radius = t.radius_km ? `${t.radius_km} km` : 'Full Coverage';
+            const radiusBadge = t.radius_km 
+                ? `<span style="display:inline-flex; align-items:center; gap:4px; background:rgba(56,189,248,0.12); color:#38bdf8; padding:2px 8px; border-radius:12px; font-size:11px; font-family:var(--font-mono); font-weight:700;">📍 Within ${radius}</span>`
+                : `<span style="color:var(--text-muted); font-size:11.5px;">🌐 Any Distance</span>`;
+
+            let typeBadge = '';
+            if (type === 'hex') typeBadge = `<span class="tg-target-pill hex">HEX</span>`;
+            else if (type === 'reg' || type === 'registration') typeBadge = `<span class="tg-target-pill reg">TAIL #</span>`;
+            else if (type === 'flight' || type === 'callsign') typeBadge = `<span class="tg-target-pill flight">FLIGHT</span>`;
+            else if (type === 'operator') typeBadge = `<span class="tg-target-pill operator">OPERATOR</span>`;
+
+            rowsHtml += `
+                <tr>
+                    <td>${typeBadge}</td>
+                    <td class="mono" style="font-weight: 700; color: var(--text-primary); font-size: 13px;">${val}</td>
+                    <td style="color: var(--text-secondary); font-size: 12.5px;">${label}</td>
+                    <td>${radiusBadge}</td>
+                    <td>
+                        <span style="display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:#4ade80; font-weight:600;">
+                            <span style="width:6px; height:6px; border-radius:50%; background:#4ade80;"></span> Active
+                        </span>
+                    </td>
+                    <td style="text-align: right;">
+                        <button class="sky-btn danger" style="padding: 4px 10px; font-size: 11px;" onclick="window.SkyAlertApp.deleteTrackedTarget('${type}', '${val}')" title="Remove target">
+                            🗑️ Delete
+                        </button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = rowsHtml;
+    }
+
+    async addTrackedTarget() {
+        const typeEl = document.getElementById('tg-new-target-type');
+        const valEl = document.getElementById('tg-new-target-val');
+        const radiusEl = document.getElementById('tg-new-target-radius');
+        const labelEl = document.getElementById('tg-new-target-label');
+
+        if (!valEl || !valEl.value.trim()) {
+            alert("Please enter a Target Identifier / Value (e.g. Hex code, Tail #, or Callsign).");
+            return;
+        }
+
+        const payload = {
+            type: typeEl ? typeEl.value : 'hex',
+            value: valEl.value.trim().toUpperCase(),
+            radius_km: radiusEl ? parseFloat(radiusEl.value) : 50,
+            label: labelEl ? labelEl.value.trim() : '',
+            enabled: true
+        };
+
+        try {
+            const res = await fetch('/api/telegram/watchlist/target', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                valEl.value = '';
+                if (labelEl) labelEl.value = '';
+                this.loadTelegramSettings();
+            } else {
+                alert(`Error adding target: ${data.message || 'Unknown error'}`);
+            }
+        } catch (e) {
+            console.error("Failed to add target:", e);
+            alert("Failed to connect to backend server.");
+        }
+    }
+
+    applyTargetPreset(type, value, label, radius) {
+        const typeEl = document.getElementById('tg-new-target-type');
+        const valEl = document.getElementById('tg-new-target-val');
+        const radiusEl = document.getElementById('tg-new-target-radius');
+        const labelEl = document.getElementById('tg-new-target-label');
+
+        if (typeEl) typeEl.value = type;
+        if (valEl) valEl.value = value;
+        if (radiusEl) radiusEl.value = radius.toString();
+        if (labelEl) labelEl.value = label;
+
+        this.addTrackedTarget();
+    }
+
+    async deleteTrackedTarget(type, value) {
+        if (!confirm(`Remove '${value}' from vicinity tracking watchlist?`)) {
+            return;
+        }
+
+        try {
+            const res = await fetch(`/api/telegram/watchlist/target?type=${encodeURIComponent(type)}&value=${encodeURIComponent(value)}`, {
+                method: 'DELETE'
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                this.loadTelegramSettings();
+            } else {
+                alert(`Error deleting target: ${data.message || 'Unknown error'}`);
+            }
+        } catch (e) {
+            console.error("Failed to delete target:", e);
+        }
+    }
+
+    async saveTelegramSettings() {
+        const payload = {
+            telegram: {
+                enabled: document.getElementById('tg-master-enable')?.checked ?? true,
+                bot_token: document.getElementById('tg-bot-token')?.value?.trim() ?? '',
+                chat_id: document.getElementById('tg-chat-id')?.value?.trim() ?? '',
+                photo_enabled: document.getElementById('tg-photo-enabled')?.checked ?? true,
+                silent: document.getElementById('tg-silent-notifications')?.checked ?? false,
+            },
+            alerts: {
+                squawk: document.getElementById('tg-alert-squawk')?.checked ?? true,
+                military: document.getElementById('tg-alert-military')?.checked ?? true,
+                government: document.getElementById('tg-alert-government')?.checked ?? true,
+                helicopters: document.getElementById('tg-alert-helicopters')?.checked ?? true,
+                rare_aircraft: document.getElementById('tg-alert-rare')?.checked ?? true,
+                formation: document.getElementById('tg-alert-formation')?.checked ?? false,
+                geofence: document.getElementById('tg-alert-geofence')?.checked ?? false,
+                watchlist: true,
+                thresholds: document.getElementById('tg-thresholds-enabled')?.checked ?? false,
+            },
+            geofence: {
+                enabled: document.getElementById('tg-alert-geofence')?.checked ?? false,
+                name: document.getElementById('tg-geofence-name')?.value?.trim() ?? 'Station Primary Vicinity Zone',
+                latitude: parseFloat(document.getElementById('tg-station-lat')?.value ?? '22.5726'),
+                longitude: parseFloat(document.getElementById('tg-station-lon')?.value ?? '88.3639'),
+                radius_km: parseFloat(document.getElementById('tg-radius-slider')?.value ?? '50'),
+            },
+            thresholds: {
+                enabled: document.getElementById('tg-thresholds-enabled')?.checked ?? false,
+                min_altitude: parseInt(document.getElementById('tg-min-altitude')?.value ?? '5000'),
+                max_speed: parseInt(document.getElementById('tg-max-speed')?.value ?? '520'),
+            }
+        };
+
+        try {
+            const res = await fetch('/api/telegram/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                alert("✅ Telegram and alert tracking configuration saved successfully.");
+                this.verifyTelegramBotToken(false);
+            } else {
+                alert(`Error saving configuration: ${data.message || 'Unknown error'}`);
+            }
+        } catch (e) {
+            console.error("Save error:", e);
+            alert("Failed to save configuration to backend.");
+        }
+    }
+
+    async verifyTelegramBotToken(showAlert = true) {
+        const tokenInput = document.getElementById('tg-bot-token');
+        const token = tokenInput ? tokenInput.value.trim() : '';
+        const pill = document.getElementById('tg-bot-status-pill');
+        const infoBox = document.getElementById('tg-bot-info-box');
+
+        if (!token) {
+            if (pill) {
+                pill.className = 'tg-bot-status-pill disconnected';
+                pill.innerHTML = '<span class="status-dot"></span> Token Required';
+            }
+            if (infoBox) infoBox.style.display = 'none';
+            if (showAlert) alert("Please enter a Telegram Bot Token to verify.");
+            return;
+        }
+
+        if (pill) {
+            pill.className = 'tg-bot-status-pill checking';
+            pill.innerHTML = '<span class="status-dot"></span> Verifying...';
+        }
+
+        try {
+            const res = await fetch(`/api/telegram/verify?token=${encodeURIComponent(token)}`);
+            const data = await res.json();
+
+            if (data.ok && data.bot) {
+                if (pill) {
+                    pill.className = 'tg-bot-status-pill connected';
+                    pill.innerHTML = `<span class="status-dot"></span> 🟢 Connected (@${data.bot.username || data.bot.first_name})`;
+                }
+                if (infoBox) {
+                    infoBox.style.display = 'flex';
+                    const nameEl = document.getElementById('tg-bot-name');
+                    const userEl = document.getElementById('tg-bot-username');
+                    const idEl = document.getElementById('tg-bot-id');
+                    if (nameEl) nameEl.textContent = data.bot.first_name || 'SkyAlert Bot';
+                    if (userEl) userEl.textContent = `@${data.bot.username || 'unknown'}`;
+                    if (idEl) idEl.textContent = `Bot ID: ${data.bot.id}`;
+                }
+                if (showAlert) {
+                    alert(`✅ Bot Verified Successfully!\nName: ${data.bot.first_name}\nUsername: @${data.bot.username}\nID: ${data.bot.id}`);
+                }
+            } else {
+                if (pill) {
+                    pill.className = 'tg-bot-status-pill disconnected';
+                    pill.innerHTML = '<span class="status-dot"></span> 🔴 Token Invalid';
+                }
+                if (infoBox) infoBox.style.display = 'none';
+                if (showAlert) {
+                    alert(`❌ Bot verification failed: ${data.error || 'Invalid Bot Token'}`);
+                }
+            }
+        } catch (e) {
+            if (pill) {
+                pill.className = 'tg-bot-status-pill disconnected';
+                pill.innerHTML = '<span class="status-dot"></span> Verification Error';
+            }
+            console.error("Verification error:", e);
+        }
+    }
+
+    async sendTelegramTestAlert() {
+        const token = document.getElementById('tg-bot-token')?.value?.trim();
+        const chatId = document.getElementById('tg-chat-id')?.value?.trim();
+        const photoEnabled = document.getElementById('tg-photo-enabled')?.checked ?? true;
+
+        if (!token || !chatId) {
+            alert("Please provide both a Telegram Bot Token and a Chat ID to test.");
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/telegram/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    bot_token: token,
+                    chat_id: chatId,
+                    photo_enabled: photoEnabled
+                })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                alert("🚀 Test Alert Dispatched!\nCheck your Telegram chat/channel. The test card was delivered successfully.");
+            } else {
+                alert(`❌ Test delivery failed: ${data.message || 'Unknown error'}`);
+            }
+        } catch (e) {
+            console.error("Test alert error:", e);
+            alert("Failed to send test alert to Telegram.");
+        }
+    }
+
+    toggleTokenVisibility() {
+        const tokenInput = document.getElementById('tg-bot-token');
+        const eye = document.getElementById('tg-token-eye');
+        if (!tokenInput) return;
+
+        if (tokenInput.type === 'password') {
+            tokenInput.type = 'text';
+            if (eye) eye.textContent = '🔒 Hide Token';
+        } else {
+            tokenInput.type = 'password';
+            if (eye) eye.textContent = '👁️ Show Token';
+        }
+    }
+
+    async toggleTelegramMaster(enabled) {
+        try {
+            await fetch('/api/telegram/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    telegram: { enabled: enabled }
+                })
+            });
+        } catch (e) {
+            console.error("Error toggling master telegram switch:", e);
+        }
+    }
+
 }
 
 // Instantiate on DOM load
 document.addEventListener("DOMContentLoaded", () => {
     window.SkyAlertApp = new SkyAlertApp();
+
     window.SkyAlertApp.init();
 });

@@ -10,155 +10,94 @@ class Notifier:
 
     def send(self, alert, plane):
 
-        special = plane.get("special") or  {}
+        special = plane.get("special") or {}
 
         # -------------------------------------------------
         # Aircraft information
         # -------------------------------------------------
 
-        flight = plane.get("flight", "").strip() or "Unknown"
-        registration = plane.get("registration", "Unknown")
-        aircraft = plane.get("description", "Unknown")
-        aircraft_type = plane.get("aircraft_type", "Unknown")
+        flight = (plane.get("flight") or "").strip() or "N/A"
+        registration = plane.get("registration") or "N/A"
+        aircraft = plane.get("description") or plane.get("model") or "Unknown Model"
+        aircraft_type = plane.get("aircraft_type") or plane.get("type") or "N/A"
         manufacturer = plane.get("manufacturer") or ""
-        owner = plane.get("owner") or ""
-       
+        owner = plane.get("owner") or special.get("operator") or ""
 
-        hexcode = plane.get("hex", "").upper()
-        squawk = plane.get("squawk", "----")
+        hexcode = str(plane.get("hex", "")).strip().upper()
+        squawk = str(plane.get("squawk") or "----")
 
-        altitude = plane.get("alt_baro")
-        altitude = (
-            "Unknown"
-            if altitude is None
-            else f"{altitude:,} ft"
-        )
+        alt_val = plane.get("alt_baro")
+        altitude = "N/A" if alt_val is None else f"{alt_val:,} ft"
 
-        distance = plane.get("r_dst")
-        distance = (
-            "Unknown"
-            if distance is None
-            else f"{round(distance, 1)} km"
-        )
+        dst_val = plane.get("r_dst")
+        distance = "N/A" if dst_val is None else f"{round(dst_val, 1)} km"
 
-        heading = plane.get("track")
-        heading = (
-            "Unknown"
-            if heading is None
-            else f"{round(heading)}°"
-        )
+        trk_val = plane.get("track")
+        heading = "N/A" if trk_val is None else f"{round(trk_val)}°"
 
-        gs = plane.get("gs")
-        speed = (
-            "Unknown"
-            if gs is None
-            else f"{round(gs * 1.852)} km/h"
-        )
+        gs_val = plane.get("gs")
+        speed = "N/A" if gs_val is None else f"{round(gs_val * 1.852)} km/h ({round(gs_val)} kt)"
 
-        operator = special.get("operator", "")
-        category = special.get("category", "")
-        campaign = special.get("campaign", "")
+        operator = special.get("operator") or plane.get("operator") or ""
+        campaign = special.get("campaign") or ""
+        category = special.get("category") or ""
+        photo_url = plane.get("image_url") or plane.get("photo_url") or special.get("image_url")
 
         tags = []
-
         for key in ("tag1", "tag2", "tag3"):
             value = special.get(key, "").strip()
-
             if value:
                 tags.append(value)
 
         # -------------------------------------------------
-        # Build Telegram Message
+        # Build HTML Telegram Message
         # -------------------------------------------------
 
-        message = f"""{alert['title']}
+        title_header = alert.get('title', '🚨 SKYALERT DETECTION')
 
-✈ Flight: {flight}
-
-🛩 Registration: {registration}
-
-📋 Aircraft: {aircraft}
-
-🏷 ICAO Type: {aircraft_type}
-"""
-
-        if manufacturer:
-            message += f"\n🏭 Manufacturer: {manufacturer}"
-
-        if owner:
-            message += f"\n👤 Owner: {owner}"
-
-        message += f"""
-
-🎯 Squawk: {squawk}
-
-📏 Altitude: {altitude}
-
-🚀 Speed: {speed}
-
-🧭 Heading: {heading}
-
-📍 Distance: {distance}
-
-🔷 HEX: {hexcode}
-"""
+        message = f"<b>{title_header}</b>\n\n"
+        message += f"✈️ <b>Flight:</b> <code>{flight}</code>\n"
+        message += f"🛩 <b>Registration:</b> <code>{registration}</code>\n"
+        message += f"📋 <b>Aircraft:</b> {aircraft} (<code>{aircraft_type}</code>)\n"
 
         if operator:
-            message += f"""
+            message += f"👥 <b>Operator:</b> {operator}\n"
+        elif manufacturer:
+            message += f"🏭 <b>Manufacturer:</b> {manufacturer}\n"
 
-👥 Operator
-
-{operator}
-"""
+        message += f"\n🎯 <b>Squawk:</b> <code>{squawk}</code>\n"
+        message += f"📏 <b>Altitude:</b> {altitude}\n"
+        message += f"🚀 <b>Speed:</b> {speed}\n"
+        message += f"📍 <b>Distance from Station:</b> {distance}\n"
+        message += f"🧭 <b>Track:</b> {heading}  ·  <b>HEX:</b> <code>{hexcode}</code>\n"
 
         if campaign:
-            message += f"""
-
-🎖 Campaign
-
-{campaign}
-"""
-
-        if category:
-            message += f"""
-
-📂 Category
-
-{category}
-"""
+            message += f"🎖 <b>Category/Role:</b> {campaign} {category}\n"
 
         if tags:
-            message += "\n\n🏷 Tags"
+            message += f"🏷 <b>Tags:</b> {', '.join(tags)}\n"
 
-            for tag in tags:
-                message += f"\n• {tag}"
+        time_str = datetime.now().strftime('%d %b %Y %H:%M:%S IST')
+        message += f"\n🕒 <i>{time_str}</i>"
 
-        message += f"""
-
-🕒 {datetime.now().strftime('%d %b %Y %H:%M:%S')}
-"""
-
-        logger.info(message)
+        logger.info(f"Generated Alert: {title_header} | Flight: {flight} | Hex: {hexcode}")
 
         # -------------------------------------------------
         # Save event to database
         # -------------------------------------------------
 
         try:
-            logger.info("Saving event to database")
             event_id = event_db.save(alert, plane)
             plane["_event_id"] = event_id
         except Exception:
             logger.exception("Failed to save event")
 
         # -------------------------------------------------
-        # Telegram
+        # Dispatch Telegram Notification
         # -------------------------------------------------
 
         if self.telegram:
-
             try:
-                self.telegram.send(message)
-
+                self.telegram.send(message, photo_url=photo_url)
             except Exception:
-                logger.exception("Telegram notification failed")
+                logger.exception("Telegram notification delivery failed")

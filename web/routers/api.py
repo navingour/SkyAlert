@@ -1622,3 +1622,254 @@ async def get_alerts_history(limit: int = 200):
         return JSONResponse({"alerts": alerts})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# =========================================================================
+# TELEGRAM CONFIGURATION & TARGET TRACKING AUTOMATION ENDPOINTS
+# =========================================================================
+
+@router.get("/telegram/config")
+async def get_telegram_config():
+    """Returns the full Telegram bot, alert scenarios, targets, and vicinity settings."""
+    try:
+        from web.services.config_manager import config_manager
+        cfg = config_manager.load()
+        
+        # Ensure default keys exist
+        telegram_cfg = cfg.get("telegram", {})
+        alerts_cfg = cfg.get("alerts", {})
+        watchlist_cfg = cfg.get("watchlist", {})
+        geofence_cfg = cfg.get("geofence", {})
+        thresholds_cfg = cfg.get("thresholds", {})
+        rare_cfg = cfg.get("rare_aircraft", {})
+
+        return JSONResponse({
+            "status": "success",
+            "telegram": {
+                "enabled": telegram_cfg.get("enabled", False),
+                "bot_token": telegram_cfg.get("bot_token", ""),
+                "chat_id": str(telegram_cfg.get("chat_id", "")),
+                "photo_enabled": telegram_cfg.get("photo_enabled", True),
+                "silent": telegram_cfg.get("silent", False),
+            },
+            "alerts": {
+                "squawk": alerts_cfg.get("squawk", True),
+                "emergency": alerts_cfg.get("emergency", True),
+                "military": alerts_cfg.get("military", True),
+                "government": alerts_cfg.get("government", True),
+                "police": alerts_cfg.get("police", True),
+                "helicopters": alerts_cfg.get("helicopters", True),
+                "rare_aircraft": alerts_cfg.get("rare_aircraft", True),
+                "watchlist": alerts_cfg.get("watchlist", True),
+                "formation": alerts_cfg.get("formation", False),
+                "geofence": alerts_cfg.get("geofence", False),
+                "thresholds": alerts_cfg.get("thresholds", False),
+            },
+            "watchlist": {
+                "registrations": watchlist_cfg.get("registrations", []),
+                "operators": watchlist_cfg.get("operators", []),
+                "flights": watchlist_cfg.get("flights", []),
+                "hex": watchlist_cfg.get("hex", []),
+                "targets": watchlist_cfg.get("targets", [])
+            },
+            "geofence": {
+                "enabled": geofence_cfg.get("enabled", False),
+                "name": geofence_cfg.get("name", "Station Vicinity Zone"),
+                "latitude": geofence_cfg.get("latitude", 22.5726),
+                "longitude": geofence_cfg.get("longitude", 88.3639),
+                "radius_km": geofence_cfg.get("radius_km", 50)
+            },
+            "thresholds": {
+                "enabled": thresholds_cfg.get("enabled", False),
+                "min_altitude": thresholds_cfg.get("min_altitude", 5000),
+                "max_speed": thresholds_cfg.get("max_speed", 520)
+            },
+            "rare_aircraft": rare_cfg
+        })
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
+@router.post("/telegram/config")
+async def save_telegram_config(request: Request):
+    """Saves updated Telegram bot parameters, scenarios, and target tracking rules."""
+    try:
+        from web.services.config_manager import config_manager
+        body = await request.json()
+        cfg = config_manager.load()
+
+        if "telegram" in body:
+            if "telegram" not in cfg:
+                cfg["telegram"] = {}
+            for k, v in body["telegram"].items():
+                cfg["telegram"][k] = v
+
+        if "alerts" in body:
+            if "alerts" not in cfg:
+                cfg["alerts"] = {}
+            for k, v in body["alerts"].items():
+                cfg["alerts"][k] = bool(v)
+
+        if "watchlist" in body:
+            if "watchlist" not in cfg:
+                cfg["watchlist"] = {}
+            for k, v in body["watchlist"].items():
+                cfg["watchlist"][k] = v
+
+        if "geofence" in body:
+            if "geofence" not in cfg:
+                cfg["geofence"] = {}
+            for k, v in body["geofence"].items():
+                cfg["geofence"][k] = v
+
+        if "thresholds" in body:
+            if "thresholds" not in cfg:
+                cfg["thresholds"] = {}
+            for k, v in body["thresholds"].items():
+                cfg["thresholds"][k] = v
+
+        config_manager.save(cfg)
+        return JSONResponse({"status": "success", "message": "Telegram and alerting configuration saved successfully."})
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
+@router.get("/telegram/verify")
+async def verify_telegram_bot(token: str = ""):
+    """Verifies a Telegram bot token via Telegram getMe API."""
+    try:
+        from web.services.config_manager import config_manager
+        from app.telegram import TelegramNotifier
+        
+        bot_token = token.strip()
+        if not bot_token:
+            cfg = config_manager.load()
+            bot_token = cfg.get("telegram", {}).get("bot_token", "")
+
+        if not bot_token:
+            return JSONResponse({"ok": False, "error": "No bot token provided or configured."}, status_code=400)
+
+        notifier = TelegramNotifier(token=bot_token, chat_id="")
+        res = notifier.verify_token()
+        return JSONResponse(res)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@router.post("/telegram/test")
+async def send_telegram_test_message(request: Request):
+    """Sends a rich test alert card to the configured Telegram chat."""
+    try:
+        from app.telegram import TelegramNotifier
+        from datetime import datetime
+        import pytz
+
+        body = await request.json()
+        token = body.get("bot_token", "").strip()
+        chat_id = str(body.get("chat_id", "")).strip()
+
+        if not token or not chat_id:
+            from web.services.config_manager import config_manager
+            cfg = config_manager.load()
+            token = token or cfg.get("telegram", {}).get("bot_token", "")
+            chat_id = chat_id or str(cfg.get("telegram", {}).get("chat_id", ""))
+
+        if not token or not chat_id:
+            return JSONResponse({
+                "status": "error",
+                "message": "Both Bot Token and Chat ID are required to send a test notification."
+            }, status_code=400)
+
+        notifier = TelegramNotifier(token=token, chat_id=chat_id, photo_enabled=body.get("photo_enabled", True))
+        
+        now_ist = datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%d %b %Y %H:%M:%S IST")
+
+        test_msg = f"""<b>⚡ SKYALERT · TEST NOTIFICATION</b>
+
+✅ <b>Telegram Alert Pipeline Connected Successfully!</b>
+
+📡 <b>Station:</b> SkyAlert Primary Node
+📍 <b>Coverage:</b> 250 km Radius Active
+🎯 <b>Vicinity Engine:</b> Online & Monitoring Airspace
+🤖 <b>Dispatcher:</b> Active
+
+<i>Your Telegram bot is fully configured and ready to broadcast emergency squawks, military movements, VIP transports, helicopters, and custom vicinity targets.</i>
+
+🕒 <i>{now_ist}</i>"""
+
+        result = notifier.send(test_msg)
+        return JSONResponse({
+            "status": "success",
+            "message": "Test message delivered to Telegram successfully!",
+            "telegram_response": result
+        })
+    except Exception as e:
+        return JSONResponse({
+            "status": "error",
+            "message": f"Failed to send Telegram message: {str(e)}"
+        }, status_code=500)
+
+
+@router.post("/telegram/watchlist/target")
+async def add_or_update_target(request: Request):
+    """Adds a custom target aircraft tracking rule (Hex, Reg, Flight, Operator) with vicinity radius."""
+    try:
+        from web.services.config_manager import config_manager
+        body = await request.json()
+        cfg = config_manager.load()
+
+        if "watchlist" not in cfg:
+            cfg["watchlist"] = {}
+        if "targets" not in cfg["watchlist"]:
+            cfg["watchlist"]["targets"] = []
+
+        target_type = body.get("type", "hex").lower() # hex, reg, flight, operator
+        value = str(body.get("value", "")).strip().upper()
+        label = body.get("label", "").strip() or value
+        radius_km = float(body.get("radius_km", 50))
+        enabled = bool(body.get("enabled", True))
+
+        if not value:
+            return JSONResponse({"status": "error", "message": "Target identifier/value is required."}, status_code=400)
+
+        # Remove duplicate if exists
+        cfg["watchlist"]["targets"] = [
+            t for t in cfg["watchlist"]["targets"] 
+            if not (t.get("type") == target_type and str(t.get("value", "")).strip().upper() == value)
+        ]
+
+        # Append new target
+        cfg["watchlist"]["targets"].append({
+            "type": target_type,
+            "value": value,
+            "label": label,
+            "radius_km": radius_km,
+            "enabled": enabled,
+            "created_at": datetime.now().isoformat()
+        })
+
+        config_manager.save(cfg)
+        return JSONResponse({"status": "success", "message": f"Target '{label}' added to vicinity tracking watchlist."})
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
+@router.delete("/telegram/watchlist/target")
+async def delete_tracked_target(type: str, value: str):
+    """Removes a target from the vicinity tracking watchlist."""
+    try:
+        from web.services.config_manager import config_manager
+        cfg = config_manager.load()
+
+        if "watchlist" in cfg and "targets" in cfg["watchlist"]:
+            target_type = type.lower()
+            val = value.strip().upper()
+            cfg["watchlist"]["targets"] = [
+                t for t in cfg["watchlist"]["targets"]
+                if not (t.get("type") == target_type and str(t.get("value", "")).strip().upper() == val)
+            ]
+            config_manager.save(cfg)
+            return JSONResponse({"status": "success", "message": "Target removed from watchlist."})
+        return JSONResponse({"status": "success", "message": "Target not found or already removed."})
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)

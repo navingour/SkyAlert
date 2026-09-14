@@ -117,6 +117,12 @@
                 <span>Unknown Aircraft</span>
             </a>
 
+            <a class="sky-nav-link" data-nav-target="telegram">
+                <span class="icon">💬</span>
+                <span>Telegram Alerts</span>
+                <span class="badge-count" id="nav-tg-badge" style="background: rgba(0, 180, 255, 0.15); color: #00d2ff; border: 1px solid rgba(0, 180, 255, 0.3);">BOT</span>
+            </a>
+
             <a class="sky-nav-link" data-nav-target="settings">
                 <span class="icon">⚙️</span>
                 <span>Station Settings</span>
@@ -868,7 +874,458 @@
                 </div>
             </section>
 
-            <!-- 12. SETTINGS VIEW -->
+            <!-- 12. TELEGRAM CONFIGURATION & TARGET TRACKING VIEW -->
+            <section class="view-section" id="view-telegram">
+                <div class="tg-container">
+                    
+                    <!-- Header Banner & Master Control Bar -->
+                    <div class="tg-header-banner">
+                        <div class="tg-header-left">
+                            <div class="tg-header-icon">💬</div>
+                            <div>
+                                <div class="tg-header-title">Telegram Alerts & Target Tracking Automation</div>
+                                <div class="tg-header-desc">Configure automated push notifications, emergency squawks, helicopter detection, and vicinity target tracking.</div>
+                            </div>
+                        </div>
+                        <div class="tg-header-actions">
+                            <div class="tg-master-toggle-wrap">
+                                <span style="font-size: 12.5px; font-weight: 700; color: var(--text-primary);">Broadcast Alerts</span>
+                                <label class="tg-toggle">
+                                    <input type="checkbox" id="tg-master-enable" checked onchange="window.SkyAlertApp.toggleTelegramMaster(this.checked)">
+                                    <span class="tg-slider"></span>
+                                </label>
+                            </div>
+                            <button class="sky-btn" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);" onclick="window.SkyAlertApp.sendTelegramTestAlert()">
+                                🚀 Send Test Alert
+                            </button>
+                            <button class="sky-btn primary" onclick="window.SkyAlertApp.saveTelegramSettings()">
+                                💾 Save Settings
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 2-Column Grid: Bot Credentials & Scenario Matrix -->
+                    <div class="tg-grid-2col">
+                        
+                        <!-- 1. Bot Connectivity & Credentials Card -->
+                        <div class="tg-card">
+                            <div class="tg-card-header">
+                                <div class="tg-card-title">
+                                    <span>🤖</span> Bot Connection & Authentication
+                                </div>
+                                <span class="tg-bot-status-pill checking" id="tg-bot-status-pill">
+                                    <span class="status-dot"></span> Checking Bot...
+                                </span>
+                            </div>
+                            <div class="tg-card-body">
+                                
+                                <!-- Bot Token Input -->
+                                <div>
+                                    <label class="sky-label" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                        <span>Telegram Bot Token (from @BotFather)</span>
+                                        <button type="button" class="sky-btn" style="padding: 2px 8px; font-size: 11px;" onclick="window.SkyAlertApp.toggleTokenVisibility()">
+                                            <span id="tg-token-eye">👁️ Show Token</span>
+                                        </button>
+                                    </label>
+                                    <div style="display: flex; gap: 8px;">
+                                        <input type="password" class="sky-input" id="tg-bot-token" placeholder="8914548311:AAHjUvcssYq-WIRXMs5pfF-XhZcivik7PWo" style="flex: 1; font-family: var(--font-mono); font-size: 13px;">
+                                        <button class="sky-btn" onclick="window.SkyAlertApp.verifyTelegramBotToken()" title="Verify Bot Token with Telegram API">
+                                            🔍 Verify
+                                        </button>
+                                    </div>
+                                    <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">
+                                        Create a new bot via <a href="https://t.me/botfather" target="_blank" style="color: var(--radar-cyan);">@BotFather</a> on Telegram to get your token.
+                                    </div>
+                                </div>
+
+                                <!-- Chat / Channel ID Input -->
+                                <div>
+                                    <label class="sky-label" style="margin-bottom: 6px; display: block;">
+                                        Telegram Chat ID / Channel / Supergroup ID
+                                    </label>
+                                    <input type="text" class="sky-input" id="tg-chat-id" placeholder="1674953261 or -1001234567890 or @channelname" style="width: 100%; font-family: var(--font-mono); font-size: 13px;">
+                                    <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">
+                                        For your personal ID, message <a href="https://t.me/userinfobot" target="_blank" style="color: var(--radar-cyan);">@userinfobot</a>. For groups or channels, add your bot as Admin.
+                                    </div>
+                                </div>
+
+                                <!-- Bot Identity Status Info Box -->
+                                <div class="tg-bot-status-box" id="tg-bot-info-box" style="display: none;">
+                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                        <span style="font-size: 24px;">🤖</span>
+                                        <div>
+                                            <div style="font-size: 13px; font-weight: 700; color: var(--text-primary);" id="tg-bot-name">SkyAlert Dispatcher</div>
+                                            <div style="font-size: 11.5px; color: var(--radar-cyan); font-family: var(--font-mono);" id="tg-bot-username">@SkyAlert_Radar_Bot</div>
+                                        </div>
+                                    </div>
+                                    <div style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);" id="tg-bot-id">ID: 8914548311</div>
+                                </div>
+
+                                <!-- Media & Sound Options -->
+                                <div class="tg-switch-row">
+                                    <div class="tg-switch-info">
+                                        <span class="tg-switch-label">🖼️ Attach Aircraft Photos</span>
+                                        <span class="tg-switch-sub">Include high-resolution airframe photo cards with alert notifications.</span>
+                                    </div>
+                                    <label class="tg-toggle">
+                                        <input type="checkbox" id="tg-photo-enabled" checked>
+                                        <span class="tg-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div class="tg-switch-row">
+                                    <div class="tg-switch-info">
+                                        <span class="tg-switch-label">🔕 Silent / Quiet Push</span>
+                                        <span class="tg-switch-sub">Deliver messages without sound (7700 emergency squawks will always ping loudly).</span>
+                                    </div>
+                                    <label class="tg-toggle">
+                                        <input type="checkbox" id="tg-silent-notifications">
+                                        <span class="tg-slider"></span>
+                                    </label>
+                                </div>
+
+                            </div>
+                        </div>
+
+                        <!-- 2. Alert Scenarios Matrix Card -->
+                        <div class="tg-card">
+                            <div class="tg-card-header">
+                                <div class="tg-card-title">
+                                    <span>🚨</span> Scenario Notification Triggers
+                                </div>
+                                <span style="font-size: 11px; color: var(--text-muted);">Real-time ADS-B Engine</span>
+                            </div>
+                            <div class="tg-card-body" style="gap: 10px;">
+                                
+                                <div class="tg-switch-row">
+                                    <div class="tg-switch-info">
+                                        <span class="tg-switch-label">🚨 Emergency Squawks (7700 / 7600 / 7500)</span>
+                                        <span class="tg-switch-sub">Emergency, Radio Failure, and Hijack squawk events.</span>
+                                    </div>
+                                    <label class="tg-toggle">
+                                        <input type="checkbox" id="tg-alert-squawk" checked>
+                                        <span class="tg-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div class="tg-switch-row">
+                                    <div class="tg-switch-info">
+                                        <span class="tg-switch-label">🪖 Military & Tactical Airframes</span>
+                                        <span class="tg-switch-sub">Fighters, military transports (C-17, C-130, IL-76), and defense aircraft.</span>
+                                    </div>
+                                    <label class="tg-toggle">
+                                        <input type="checkbox" id="tg-alert-military" checked>
+                                        <span class="tg-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div class="tg-switch-row">
+                                    <div class="tg-switch-info">
+                                        <span class="tg-switch-label">👑 Government & VIP Transport</span>
+                                        <span class="tg-switch-sub">Head-of-state, government charters, and diplomatic aircraft.</span>
+                                    </div>
+                                    <label class="tg-toggle">
+                                        <input type="checkbox" id="tg-alert-government" checked>
+                                        <span class="tg-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div class="tg-switch-row">
+                                    <div class="tg-switch-info">
+                                        <span class="tg-switch-label">🚁 Helicopters & Low-Altitude Rotorcraft</span>
+                                        <span class="tg-switch-sub">Bell 429, Eurocopter H145, AW139, Mi-17, and private helicopters.</span>
+                                    </div>
+                                    <label class="tg-toggle">
+                                        <input type="checkbox" id="tg-alert-helicopters" checked>
+                                        <span class="tg-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div class="tg-switch-row">
+                                    <div class="tg-switch-info">
+                                        <span class="tg-switch-label">⭐ Rare & Heavy Airframe Spotting</span>
+                                        <span class="tg-switch-sub">A380, AN-124, Beluga, B747, C-5M, and 1-time visitors.</span>
+                                    </div>
+                                    <label class="tg-toggle">
+                                        <input type="checkbox" id="tg-alert-rare" checked>
+                                        <span class="tg-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div class="tg-switch-row">
+                                    <div class="tg-switch-info">
+                                        <span class="tg-switch-label">🛫 Tactical Formation Flights</span>
+                                        <span class="tg-switch-sub">Detect 2+ aircraft flying in close formation proximity.</span>
+                                    </div>
+                                    <label class="tg-toggle">
+                                        <input type="checkbox" id="tg-alert-formation">
+                                        <span class="tg-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div class="tg-switch-row">
+                                    <div class="tg-switch-info">
+                                        <span class="tg-switch-label">📍 Geofence Perimeter Zone Incursion</span>
+                                        <span class="tg-switch-sub">Alert when aircraft crosses into defined station perimeter.</span>
+                                    </div>
+                                    <label class="tg-toggle">
+                                        <input type="checkbox" id="tg-alert-geofence">
+                                        <span class="tg-slider"></span>
+                                    </label>
+                                </div>
+
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- 3. Target Tracking & Proximity Vicinity Rules (Watchlist) -->
+                    <div class="tg-card">
+                        <div class="tg-card-header">
+                            <div class="tg-card-title">
+                                <span>🎯</span> Custom Target Aircraft Tracking & Vicinity Rules
+                            </div>
+                            <span style="font-size: 11.5px; color: var(--radar-cyan); font-weight: 600;">
+                                Track specific aircraft & get notified when they enter your vicinity
+                            </span>
+                        </div>
+                        <div class="tg-card-body">
+                            
+                            <!-- Add Target Tracking Form -->
+                            <div class="tg-target-builder">
+                                <div style="font-size: 13px; font-weight: 700; color: var(--text-primary);">
+                                    ➕ Add New Aircraft Target Tracking Rule
+                                </div>
+                                <div class="tg-target-inputs">
+                                    <div>
+                                        <label class="sky-label" style="font-size: 11px; margin-bottom: 4px; display: block;">Match Type</label>
+                                        <select class="sky-select" id="tg-new-target-type" style="width: 100%; font-size: 12.5px;">
+                                            <option value="hex">ICAO Hex Code</option>
+                                            <option value="reg">Tail Number / Reg</option>
+                                            <option value="flight">Callsign / Flight Prefix</option>
+                                            <option value="operator">Operator Name</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="sky-label" style="font-size: 11px; margin-bottom: 4px; display: block;">Identifier / Value</label>
+                                        <input type="text" class="sky-input" id="tg-new-target-val" placeholder="e.g. 800123 or VT-ABC" style="width: 100%; font-family: var(--font-mono); font-size: 12.5px;">
+                                    </div>
+                                    <div>
+                                        <label class="sky-label" style="font-size: 11px; margin-bottom: 4px; display: block;">Vicinity Range</label>
+                                        <select class="sky-select" id="tg-new-target-radius" style="width: 100%; font-size: 12.5px;">
+                                            <option value="25">Within 25 km</option>
+                                            <option value="50" selected>Within 50 km</option>
+                                            <option value="100">Within 100 km</option>
+                                            <option value="150">Within 150 km</option>
+                                            <option value="0">Any Distance (Full Range)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="sky-label" style="font-size: 11px; margin-bottom: 4px; display: block;">Label / Note</label>
+                                        <input type="text" class="sky-input" id="tg-new-target-label" placeholder="e.g. VIP Gulfstream, Family Flight, Rare Ilyushin" style="width: 100%; font-size: 12.5px;">
+                                    </div>
+                                    <div style="display: flex; align-items: flex-end;">
+                                        <button class="sky-btn primary" style="padding: 9px 16px; font-weight: 700;" onclick="window.SkyAlertApp.addTrackedTarget()">
+                                            + Add Target
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Quick Presets -->
+                                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px;">
+                                    <span style="font-size: 11px; color: var(--text-muted);">Quick Presets:</span>
+                                    <button type="button" class="sky-btn" style="padding: 2px 8px; font-size: 11px;" onclick="window.SkyAlertApp.applyTargetPreset('operator', 'Indian Air Force', 'Indian Air Force Fleet', 50)">
+                                        🪖 + Indian Air Force (50 km)
+                                    </button>
+                                    <button type="button" class="sky-btn" style="padding: 2px 8px; font-size: 11px;" onclick="window.SkyAlertApp.applyTargetPreset('operator', 'Qatar Executive', 'Qatar Executive VIP', 50)">
+                                        👑 + Qatar Executive VIP (50 km)
+                                    </button>
+                                    <button type="button" class="sky-btn" style="padding: 2px 8px; font-size: 11px;" onclick="window.SkyAlertApp.applyTargetPreset('flight', 'RCH', 'USAF Reach Flights', 100)">
+                                        ✈️ + RCH USAF Transports (100 km)
+                                    </button>
+                                    <button type="button" class="sky-btn" style="padding: 2px 8px; font-size: 11px;" onclick="window.SkyAlertApp.applyTargetPreset('operator', 'NASA', 'NASA Science Fleet', 100)">
+                                        🚀 + NASA Aircraft (100 km)
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Active Tracked Targets Table -->
+                            <div class="tg-targets-table-wrap">
+                                <table class="sky-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Type</th>
+                                            <th>Target Identifier</th>
+                                            <th>Label / Description</th>
+                                            <th>Proximity Vicinity Trigger</th>
+                                            <th>Status</th>
+                                            <th style="text-align: right;">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tg-targets-table-body">
+                                        <!-- Dynamically Populated -->
+                                    </tbody>
+                                </table>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <!-- 4. Station Vicinity & Geofence Perimeter Settings -->
+                    <div class="tg-grid-2col">
+                        <div class="tg-card">
+                            <div class="tg-card-header">
+                                <div class="tg-card-title">
+                                    <span>📍</span> Station Vicinity & Geofence Coordinates
+                                </div>
+                            </div>
+                            <div class="tg-card-body">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                                    <div>
+                                        <label class="sky-label" style="font-size: 11.5px; margin-bottom: 4px; display: block;">Station Latitude</label>
+                                        <input type="number" step="0.0001" class="sky-input" id="tg-station-lat" value="22.5726" style="width: 100%; font-family: var(--font-mono); font-size: 13px;">
+                                    </div>
+                                    <div>
+                                        <label class="sky-label" style="font-size: 11.5px; margin-bottom: 4px; display: block;">Station Longitude</label>
+                                        <input type="number" step="0.0001" class="sky-input" id="tg-station-lon" value="88.3639" style="width: 100%; font-family: var(--font-mono); font-size: 13px;">
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                        <label class="sky-label" style="font-size: 11.5px;">Default Proximity Alert Radius</label>
+                                        <span id="tg-radius-val" style="font-family: var(--font-mono); font-weight: 700; color: var(--radar-cyan);">50 km</span>
+                                    </div>
+                                    <input type="range" id="tg-radius-slider" min="10" max="250" value="50" step="5" style="width: 100%; accent-color: var(--radar-cyan);" oninput="document.getElementById('tg-radius-val').textContent = this.value + ' km'">
+                                </div>
+                                <div>
+                                    <label class="sky-label" style="font-size: 11.5px; margin-bottom: 4px; display: block;">Perimeter Zone Name</label>
+                                    <input type="text" class="sky-input" id="tg-geofence-name" value="Station Primary Vicinity Zone" style="width: 100%; font-size: 13px;">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Telemetry Thresholds -->
+                        <div class="tg-card">
+                            <div class="tg-card-header">
+                                <div class="tg-card-title">
+                                    <span>⚠️</span> Telemetry Anomaly Alert Thresholds
+                                </div>
+                            </div>
+                            <div class="tg-card-body">
+                                <div class="tg-switch-row">
+                                    <div class="tg-switch-info">
+                                        <span class="tg-switch-label">⚡ Enable Anomaly Thresholds</span>
+                                        <span class="tg-switch-sub">Trigger alerts when aircraft exceed abnormal speed or altitude envelopes.</span>
+                                    </div>
+                                    <label class="tg-toggle">
+                                        <input type="checkbox" id="tg-thresholds-enabled">
+                                        <span class="tg-slider"></span>
+                                    </label>
+                                </div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                                    <div>
+                                        <label class="sky-label" style="font-size: 11.5px; margin-bottom: 4px; display: block;">Low Altitude Floor (< ft)</label>
+                                        <input type="number" class="sky-input" id="tg-min-altitude" value="5000" style="width: 100%; font-family: var(--font-mono); font-size: 13px;">
+                                    </div>
+                                    <div>
+                                        <label class="sky-label" style="font-size: 11.5px; margin-bottom: 4px; display: block;">High Speed Ceiling (> kt)</label>
+                                        <input type="number" class="sky-input" id="tg-max-speed" value="520" style="width: 100%; font-family: var(--font-mono); font-size: 13px;">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 5. Extended Telegram Capabilities & Bot Guide -->
+                    <div class="tg-card">
+                        <div class="tg-card-header">
+                            <div class="tg-card-title">
+                                <span>🚀</span> Extended Telegram Capabilities & Automation Ideas
+                            </div>
+                            <span style="font-size: 11.5px; color: var(--radar-cyan);">What else can we build with Telegram?</span>
+                        </div>
+                        <div class="tg-card-body">
+                            <div class="tg-ideas-grid">
+                                
+                                <div class="tg-idea-card">
+                                    <div class="tg-idea-title">
+                                        <span>💬</span> 2-Way Interactive Bot Commands
+                                    </div>
+                                    <div class="tg-idea-body">
+                                        Control and query SkyAlert straight from Telegram by sending bot commands:
+                                        <br><br>
+                                        <span class="tg-command-badge">/live</span> Active aircraft count & closest plane.<br>
+                                        <span class="tg-command-badge">/stats</span> Today's unique aircraft & top operators.<br>
+                                        <span class="tg-command-badge">/track &lt;hex&gt;</span> Instant live telemetry & photo.<br>
+                                        <span class="tg-command-badge">/squawk</span> List of active emergency squawks.<br>
+                                        <span class="tg-command-badge">/weather</span> Upper-air temperature & wind speeds.
+                                    </div>
+                                </div>
+
+                                <div class="tg-idea-card">
+                                    <div class="tg-idea-title">
+                                        <span>🌅</span> Scheduled Morning Airspace Briefing
+                                    </div>
+                                    <div class="tg-idea-body">
+                                        Automated daily briefing at 08:00 AM IST summarizing overnight traffic:
+                                        <br><br>
+                                        • Total unique aircraft tracked over 24h<br>
+                                        • Rare & 1-time visitors detected<br>
+                                        • Military & Government movement logs<br>
+                                        • Peak traffic hour & receiver health stats
+                                    </div>
+                                </div>
+
+                                <div class="tg-idea-card">
+                                    <div class="tg-idea-title">
+                                        <span>🗺️</span> Instant Radar Map Direct Links
+                                    </div>
+                                    <div class="tg-idea-body">
+                                        Every alert includes a direct one-tap link:
+                                        <br><br>
+                                        Tapping the link opens the SkyAlert Radar Map or TAR1090 zoomed and centered directly on that aircraft with live track breadcrumbs and altitude graphs.
+                                    </div>
+                                </div>
+
+                                <div class="tg-idea-card">
+                                    <div class="tg-idea-title">
+                                        <span>📸</span> High-Res Airframe Photo Cards
+                                    </div>
+                                    <div class="tg-idea-body">
+                                        Auto-fetch aircraft photos from JetAPI & AirLabs and dispatch them directly as rich photo cards with formatted aircraft specs, operator logo, and route info.
+                                    </div>
+                                </div>
+
+                                <div class="tg-idea-card">
+                                    <div class="tg-idea-title">
+                                        <span>📱</span> Telegram Mini App / WebApp
+                                    </div>
+                                    <div class="tg-idea-body">
+                                        Run the entire SkyAlert Radar interface inside Telegram as a native Telegram WebApp (Mini App). Open live radar maps on your phone without leaving Telegram!
+                                    </div>
+                                </div>
+
+                                <div class="tg-idea-card">
+                                    <div class="tg-idea-title">
+                                        <span>📣</span> Multi-Channel / Topic Routing
+                                    </div>
+                                    <div class="tg-idea-body">
+                                        Route different alerts to different Telegram group topics:
+                                        <br><br>
+                                        • <code>#emergencies</code> for 7700 squawks<br>
+                                        • <code>#military-movements</code> for IAF/USAF<br>
+                                        • <code>#rare-spotters</code> for A380s / Belugas
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- 13. SETTINGS VIEW -->
             <section class="view-section" id="view-settings">
                 <div class="sky-panel" style="max-width: 700px;">
                     <div class="sky-panel-header">

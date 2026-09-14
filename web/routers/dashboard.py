@@ -32,6 +32,8 @@ router = APIRouter()
 @router.get("/rare")
 @router.get("/rare-aircraft")
 @router.get("/unknown")
+@router.get("/telegram")
+@router.get("/telegram/{subpath:path}")
 @router.get("/settings")
 async def index_view(request: Request, subpath: str = ""):
     """Renders the master SkyAlert aviation monitoring and intelligence platform."""

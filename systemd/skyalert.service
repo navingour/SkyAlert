@@ -1,0 +1,21 @@
+[Unit]
+Description=SkyAlert ADS-B Tracking & Alerting Platform
+After=network.target network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Change User and Group to your system user (e.g. pi, debian, root, or your username)
+# User=pi
+# Group=pi
+WorkingDirectory=/opt/SkyAlert-Full
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/SkyAlert-Full/start.sh
+ExecStop=/opt/SkyAlert-Full/stop.sh
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

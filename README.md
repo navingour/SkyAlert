@@ -77,6 +77,36 @@ Open your browser at **`http://localhost:8080`** (or `http://YOUR_SERVER_IP:8080
 
 ---
 
+## ⚡ Run as a Background Service (Autostart on Reboot)
+
+To run SkyAlert in the background as a persistent system service that starts automatically whenever your computer/server reboots:
+
+### 1. Install & Enable Background Service
+```bash
+./scripts/install_service.sh
+```
+*The installer automatically detects your operating system:*
+- **Linux (Debian / Raspberry Pi / Ubuntu):** Creates and enables a `systemd` service (`skyalert.service`).
+- **macOS:** Creates and loads a user `launchd` background agent (`com.skyalert.app.plist`).
+
+### 2. Service Management Commands
+
+**On Linux (`systemd`):**
+```bash
+sudo systemctl status skyalert     # Check service health
+sudo journalctl -u skyalert -f     # View live continuous logs
+sudo systemctl restart skyalert    # Restart service
+sudo systemctl stop skyalert       # Stop service
+```
+
+**On macOS (`launchd`):**
+```bash
+tail -f logs/skyalert.log          # View live continuous logs
+./scripts/uninstall_service.sh     # Stop & remove background service
+```
+
+---
+
 ## ⚙️ Configuration Guide
 
 All settings are managed via `config/config.yaml` or directly inside the **Web Settings / Telegram UI**.

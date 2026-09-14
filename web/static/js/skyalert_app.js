@@ -108,9 +108,12 @@ class SkyAlertApp {
         const tblSearch = document.getElementById("table-filter-search");
         if (tblSearch) {
             tblSearch.addEventListener("input", (e) => {
-                this.aircraftTableParams.search = e.target.value;
-                this.aircraftTableParams.page = 1;
-                this.fetchAircraftTable();
+                clearTimeout(this.tblSearchDebounceTimer);
+                this.tblSearchDebounceTimer = setTimeout(() => {
+                    this.aircraftTableParams.search = e.target.value;
+                    this.aircraftTableParams.page = 1;
+                    this.fetchAircraftTable();
+                }, 250);
             });
         }
 

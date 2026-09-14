@@ -260,21 +260,32 @@ async def get_aircraft_list(
         
         s_clean = search.strip().upper() if isinstance(search, str) and search.strip() else None
         if s_clean:
-            where_clauses.append("(UPPER(a.icao_hex) LIKE ? OR UPPER(a.callsign) LIKE ? OR UPPER(a.registration) LIKE ? OR UPPER(a.operator) LIKE ? OR UPPER(a.aircraft_type) LIKE ?)")
+            where_clauses.append("""(
+                UPPER(COALESCE(a.icao_hex, '')) LIKE ? OR
+                UPPER(COALESCE(a.callsign, '')) LIKE ? OR
+                UPPER(COALESCE(a.registration, '')) LIKE ? OR
+                UPPER(COALESCE(e.registration, '')) LIKE ? OR
+                UPPER(COALESCE(a.operator, '')) LIKE ? OR
+                UPPER(COALESCE(e.operator_name, '')) LIKE ? OR
+                UPPER(COALESCE(a.aircraft_type, '')) LIKE ? OR
+                UPPER(COALESCE(e.icao_aircraft_type, '')) LIKE ? OR
+                UPPER(COALESCE(e.model, '')) LIKE ? OR
+                UPPER(COALESCE(e.manufacturer, '')) LIKE ?
+            )""")
             s_p = f"%{s_clean}%"
-            params.extend([s_p, s_p, s_p, s_p, s_p])
+            params.extend([s_p] * 10)
             
         op_clean = operator.strip().upper() if isinstance(operator, str) and operator.strip() and operator.lower() != "all" else None
         if op_clean:
-            where_clauses.append("(UPPER(a.operator) LIKE ? OR UPPER(e.operator_name) LIKE ?)")
+            where_clauses.append("(UPPER(COALESCE(a.operator, '')) LIKE ? OR UPPER(COALESCE(e.operator_name, '')) LIKE ?)")
             op_p = f"%{op_clean}%"
             params.extend([op_p, op_p])
             
         type_clean = aircraft_type.strip().upper() if isinstance(aircraft_type, str) and aircraft_type.strip() and aircraft_type.lower() != "all" else None
         if type_clean:
-            where_clauses.append("(UPPER(a.aircraft_type) LIKE ? OR UPPER(e.icao_aircraft_type) LIKE ?)")
+            where_clauses.append("(UPPER(COALESCE(a.aircraft_type, '')) LIKE ? OR UPPER(COALESCE(e.icao_aircraft_type, '')) LIKE ? OR UPPER(COALESCE(e.model, '')) LIKE ?)")
             ac_p = f"%{type_clean}%"
-            params.extend([ac_p, ac_p])
+            params.extend([ac_p, ac_p, ac_p])
 
         enr_clean = enriched.strip().lower() if isinstance(enriched, str) else None
         if enr_clean == "unknown":
@@ -1395,20 +1406,25 @@ async def get_types(limit: int = 100):
 
 @router.get("/search")
 async def global_search(q: str = Query(..., min_length=1)):
-    """Fast multi-field global search against real remote SkyAlert backend."""
+    """Fast multi-field global search against relational aircraft database."""
     try:
-        res = skyalert_remote.get_aircraft_list(search=q, page=1, page_size=20)
-        return JSONResponse({"query": q, "count": len(res.get("items", [])), "results": res.get("items", [])})
+        res = await get_aircraft_list(search=q, page=1, page_size=20)
+        data = json.loads(res.body.decode()) if hasattr(res, "body") else res
+        items = data.get("items", [])
+        return JSONResponse({"query": q, "count": len(items), "results": items})
     except Exception as e:
+        logger.exception("Error in global search")
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @router.get("/unknown")
 async def get_unknown_aircraft(limit: int = 50):
     """Returns aircraft where enrichment information is missing."""
     try:
-        res = skyalert_remote.get_aircraft_list(status="unresolved", page=1, page_size=limit)
-        return JSONResponse(res.get("items", []))
+        res = await get_aircraft_list(enriched="unknown", page=1, page_size=limit)
+        data = json.loads(res.body.decode()) if hasattr(res, "body") else res
+        return JSONResponse(data.get("items", []))
     except Exception as e:
+        logger.exception("Error in get_unknown_aircraft")
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @router.post("/aircraft/{id_or_hex}/enrich")

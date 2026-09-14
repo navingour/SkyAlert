@@ -423,10 +423,28 @@ class SkyAlertRemoteClient:
                     LEFT JOIN aircraft_enrichment e ON a.id = e.aircraft_id
                 """
                 params_sql = []
+                where_clauses = []
                 if search:
-                    query += " WHERE a.icao_hex LIKE ? OR a.callsign LIKE ? OR a.registration LIKE ?"
-                    s_param = f"%{search}%"
-                    params_sql.extend([s_param, s_param, s_param])
+                    s_clean = search.strip().upper()
+                    where_clauses.append("""(
+                        UPPER(COALESCE(a.icao_hex, '')) LIKE ? OR
+                        UPPER(COALESCE(a.callsign, '')) LIKE ? OR
+                        UPPER(COALESCE(a.registration, '')) LIKE ? OR
+                        UPPER(COALESCE(e.registration, '')) LIKE ? OR
+                        UPPER(COALESCE(a.operator, '')) LIKE ? OR
+                        UPPER(COALESCE(e.operator_name, '')) LIKE ? OR
+                        UPPER(COALESCE(a.aircraft_type, '')) LIKE ? OR
+                        UPPER(COALESCE(e.icao_aircraft_type, '')) LIKE ? OR
+                        UPPER(COALESCE(e.model, '')) LIKE ? OR
+                        UPPER(COALESCE(e.manufacturer, '')) LIKE ?
+                    )""")
+                    s_param = f"%{s_clean}%"
+                    params_sql.extend([s_param] * 10)
+                if status == "unresolved":
+                    where_clauses.append("(e.model IS NULL AND (a.model IS NULL OR a.model = 'Unknown' OR a.model = ''))")
+                
+                if where_clauses:
+                    query += " WHERE " + " AND ".join(where_clauses)
                 query += " ORDER BY a.last_seen DESC"
                 cur.execute(query, params_sql)
                 rows = cur.fetchall()

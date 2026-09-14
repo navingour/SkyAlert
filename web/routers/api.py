@@ -32,6 +32,8 @@ from app.analytics_service import format_ist_datetime, format_duration, analytic
 from app.alert_lookup import AlertLookup
 from app.event_database import EventDatabase
 from app.aircraft_enricher import aircraft_enricher
+from app.photo_service import photo_service
+from app.specs_service import specs_service
 from web.services.config_manager import config_manager
 from web.services.status_service import status_service
 
@@ -542,7 +544,23 @@ async def get_aircraft_profile(id_or_hex: str):
     # frequent_routes: aggregated route patterns — how many times each route was observed
     profile["frequent_routes"] = analytics_service.get_aircraft_route_aggregation(id_or_hex)
 
+    # Attach real aircraft photo from Planespotters / JetPhotos / Airport-Data (cached)
+    reg_val = profile.get("registration") or (profile.get("identity") or {}).get("registration") or ""
+    profile["photo"] = photo_service.get_photo(reg_val, hex_u)
+
+    # Attach API Ninjas technical airframe/rotorcraft specifications (cached)
+    mfr_str = (profile.get("manufacturer") or {}).get("manufacturer") or ""
+    mdl_str = (profile.get("manufacturer") or {}).get("model") or ""
+    type_code = (profile.get("identity") or {}).get("aircraft_type") or (profile.get("identity") or {}).get("type_code") or ""
+    profile["technical_specs"] = specs_service.get_specs(mfr_str, mdl_str, type_code)
+
     return JSONResponse(profile)
+
+@router.get("/aircraft/{id_or_hex}/photo")
+async def get_aircraft_photo(id_or_hex: str, reg: Optional[str] = Query(None)):
+    """Returns aircraft photo from Planespotters / JetPhotos / Airport-Data."""
+    photo = photo_service.get_photo(reg, id_or_hex)
+    return JSONResponse(photo or {})
 
 @router.get("/aircraft/{id_or_hex}/telemetry")
 async def get_aircraft_telemetry(id_or_hex: str, limit: int = Query(50, le=200)):

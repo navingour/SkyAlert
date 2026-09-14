@@ -946,7 +946,96 @@ class SkyAlertApp {
         const routeSummary = p.route_summary || { unique_routes_count: 0, observed_sessions_count: 0, days_observed_count: 0, most_observed_routes: [] };
         const mostObserved = routeSummary.most_observed_routes || [];
 
+        // Photo Showcase
+        const photo = p.photo || null;
+        const photoHeroHtml = photo && photo.image_url ? `
+            <!-- Aircraft Photo Showcase Hero -->
+            <div class="profile-photo-hero">
+                <img src="${photo.image_url}" alt="${p.registration} ${p.manufacturer.model}" onerror="this.parentElement.style.display='none';" />
+                <div class="profile-photo-overlay"></div>
+                <div class="profile-photo-reg-badge">
+                    <span>✈</span>
+                    <span>${p.registration !== 'Unknown' && p.registration !== '-' ? p.registration : p.icao_hex}</span>
+                    <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;">· ${p.manufacturer.manufacturer} ${p.manufacturer.model}</span>
+                </div>
+                <div class="profile-photo-attribution">
+                    <span>📷 ${photo.copyright || 'Planespotters.net'}</span>
+                    ${photo.link ? `<a href="${photo.link}" target="_blank">View Original ↗</a>` : ''}
+                </div>
+            </div>
+        ` : '';
+
+        // Technical Specifications (API Ninjas)
+        const specs = p.technical_specs || null;
+        let specsCards = [];
+        if (specs) {
+            if (specs.engine_type) {
+                specsCards.push({ lbl: 'Engine Type', val: specs.engine_type, sub: specs.engine_thrust_lb_ft ? `${Number(specs.engine_thrust_lb_ft).toLocaleString()} lbf thrust` : '' });
+            }
+            if (specs.cruise_speed_knots || specs.cruise_speed_sl_knots) {
+                const kts = specs.cruise_speed_knots || specs.cruise_speed_sl_knots;
+                specsCards.push({ lbl: 'Cruise Speed', val: `${kts} kts`, sub: `${Math.round(Number(kts) * 1.852)} km/h` });
+            }
+            if (specs.max_speed_knots || specs.max_speed_sl_knots) {
+                const kts = specs.max_speed_knots || specs.max_speed_sl_knots;
+                specsCards.push({ lbl: 'Maximum Speed', val: `${kts} kts`, sub: `${Math.round(Number(kts) * 1.852)} km/h` });
+            }
+            if (specs.ceiling_ft) {
+                specsCards.push({ lbl: 'Service Ceiling', val: `${Number(specs.ceiling_ft).toLocaleString()} ft`, sub: `FL${Math.round(Number(specs.ceiling_ft)/100)} (${Math.round(Number(specs.ceiling_ft)*0.3048).toLocaleString()} m)` });
+            }
+            if (specs.range_nautical_miles) {
+                specsCards.push({ lbl: 'Maximum Range', val: `${Number(specs.range_nautical_miles).toLocaleString()} NM`, sub: `${Math.round(Number(specs.range_nautical_miles) * 1.852).toLocaleString()} km` });
+            }
+            if (specs.gross_weight_lbs) {
+                specsCards.push({ lbl: 'Max Takeoff / Gross Wt', val: `${Number(specs.gross_weight_lbs).toLocaleString()} lbs`, sub: `${Math.round(Number(specs.gross_weight_lbs)*0.453592).toLocaleString()} kg` });
+            }
+            if (specs.empty_weight_lbs) {
+                specsCards.push({ lbl: 'Operating Empty Wt', val: `${Number(specs.empty_weight_lbs).toLocaleString()} lbs`, sub: `${Math.round(Number(specs.empty_weight_lbs)*0.453592).toLocaleString()} kg` });
+            }
+            if (specs.wing_span_ft) {
+                specsCards.push({ lbl: 'Wingspan', val: `${specs.wing_span_ft} ft`, sub: `${Math.round(Number(specs.wing_span_ft)*0.3048*10)/10} m` });
+            }
+            if (specs.main_rotor_diameter_ft) {
+                specsCards.push({ lbl: 'Main Rotor Diameter', val: `${specs.main_rotor_diameter_ft} ft`, sub: `${Math.round(Number(specs.main_rotor_diameter_ft)*0.3048*10)/10} m (${specs.num_blades || 2} blades)` });
+            }
+            if (specs.length_ft) {
+                specsCards.push({ lbl: 'Airframe Length', val: `${specs.length_ft} ft`, sub: `${Math.round(Number(specs.length_ft)*0.3048*10)/10} m` });
+            }
+            if (specs.height_ft) {
+                specsCards.push({ lbl: 'Tail Height', val: `${specs.height_ft} ft`, sub: `${Math.round(Number(specs.height_ft)*0.3048*10)/10} m` });
+            }
+            if (specs.takeoff_ground_run_ft) {
+                specsCards.push({ lbl: 'Takeoff Ground Roll', val: `${Number(specs.takeoff_ground_run_ft).toLocaleString()} ft`, sub: `${Math.round(Number(specs.takeoff_ground_run_ft)*0.3048).toLocaleString()} m` });
+            }
+            if (specs.fuel_capacity_gallons) {
+                specsCards.push({ lbl: 'Fuel Capacity', val: `${Number(specs.fuel_capacity_gallons).toLocaleString()} gal`, sub: `${Math.round(Number(specs.fuel_capacity_gallons)*3.78541).toLocaleString()} L` });
+            }
+        }
+
+        const specsPanelHtml = specsCards.length > 0 ? `
+            <!-- Airframe Technical Specifications -->
+            <div class="sky-panel" style="margin-top: 20px;">
+                <div class="sky-panel-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span class="sky-panel-title">⚙️ AIRFRAME TECHNICAL SPECIFICATIONS (${specs.category_type || 'Aircraft'})</span>
+                    <span style="font-size: 11px; color: var(--text-muted);">Source: API Ninjas Intelligence</span>
+                </div>
+                <div class="sky-panel-body">
+                    <div class="profile-specs-grid">
+                        ${specsCards.map(c => `
+                            <div class="spec-card">
+                                <span class="spec-card-lbl">${c.lbl}</span>
+                                <span class="spec-card-val">${c.val}</span>
+                                ${c.sub ? `<span class="spec-card-sub">${c.sub}</span>` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        ` : '';
+
         container.innerHTML = `
+            ${photoHeroHtml}
+
             <!-- Top Identity Banner -->
             <div class="profile-header-banner">
                 <div class="profile-identity-main">
@@ -1119,6 +1208,8 @@ class SkyAlertApp {
                     </div>
                 </div>
             </div>
+
+            ${specsPanelHtml}
 
             <!-- Route Summary & Repeated Route Analysis -->
             <div class="sky-panel" style="margin-top: 20px;">

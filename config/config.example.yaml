@@ -68,6 +68,9 @@ providers:
   airlabs:
     enabled: false
     api_key: ""        # Optional: airlabs.co API key
+  api_ninjas:
+    enabled: false
+    api_key: ""        # Optional: api-ninjas.com API key for aircraft specs
 
 # Optional: Station location for distance/bearing calculations
 # station:

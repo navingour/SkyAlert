@@ -1,78 +1,35 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────
-# SkyAlert Startup Script
-# Starts both the ADS-B backend engine AND the web dashboard together.
+# SkyAlert Master Startup Script
+# Boots the Unified ADS-B Collector & Web Intelligence Platform
 # ─────────────────────────────────────────────────────────────────────────
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
 
-# Activate virtual environment if it exists
+# Activate virtual environment if present
 if [ -d ".venv" ]; then
     source .venv/bin/activate
 elif [ -d "venv" ]; then
     source venv/bin/activate
 fi
 
-# Check config exists
+# Auto-create config from example if missing
 if [ ! -f "config/config.yaml" ]; then
-    echo ""
-    echo "  ⚠️  ERROR: config/config.yaml not found!"
-    echo "  Please copy the example config and fill in your settings:"
-    echo ""
-    echo "    cp config/config.example.yaml config/config.yaml"
-    echo "    nano config/config.yaml"
-    echo ""
-    exit 1
+    if [ -f "config/config.example.yaml" ]; then
+        echo "  ℹ️  Creating initial config/config.yaml from example template..."
+        cp config/config.example.yaml config/config.yaml
+    fi
 fi
 
-# Check data directory exists
-mkdir -p data logs
-
-echo ""
-echo "  ✈  SkyAlert Station Control - Starting..."
-echo "  ────────────────────────────────────────────"
-echo ""
-
-# Check if web-only mode is requested
-WEB_ONLY=false
-for arg in "$@"; do
-    case $arg in
-        --web-only|--no-collector|-w)
-            WEB_ONLY=true
-            shift
-            ;;
-    esac
-done
-
-if [ "$COLLECTOR" = "false" ] || [ "$COLLECTOR" = "0" ]; then
-    WEB_ONLY=true
-fi
-
-# Start the backend engine in the background (unless --web-only is specified)
-if [ "$WEB_ONLY" = true ]; then
-    echo "  ℹ️  Web-only mode active (Collector is DISABLED)."
-    BACKEND_PID=""
-else
-    echo "  [1/2] Starting ADS-B backend engine..."
-    python3 -m app.backend.main &
-    BACKEND_PID=$!
-    echo "        Backend PID: $BACKEND_PID"
-    sleep 2
-fi
+mkdir -p data logs data/cache
 
 # Ensure port 8080 is clear
 OLD_PORT_PID=$(lsof -ti:8080 2>/dev/null)
 if [ -n "$OLD_PORT_PID" ]; then
-    echo "  ⚠️  Port 8080 is in use (PID: $OLD_PORT_PID). Clearing it..."
     kill -9 $OLD_PORT_PID 2>/dev/null || true
     sleep 1
 fi
 
-# Start the web dashboard
-echo "  [2/2] Starting web dashboard on port 8080..."
-echo ""
-exec python3 -m uvicorn web.main:app --host 0.0.0.0 --port 8080
+exec python3 main.py "$@"
 
-# Cleanup on exit
-trap "kill $BACKEND_PID 2>/dev/null" EXIT

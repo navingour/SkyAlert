@@ -1,47 +1,87 @@
-# SkyAlert Configuration
+# SkyAlert Aviation Intelligence & ADS-B Fixed Station Configuration
 # ─────────────────────────────────────────────────────────────────────────
 # INSTRUCTIONS:
-#   1. Copy this file to config/config.yaml
+#   1. Copy this file to config/config.yaml:
 #      cp config/config.example.yaml config/config.yaml
-#   2. Fill in your values below.
-#   3. config/config.yaml is excluded from git (.gitignore) to protect secrets.
+#   2. Customize the values below for your receiver and environment.
 # ─────────────────────────────────────────────────────────────────────────
 
 general:
-  # How often (in seconds) the backend polls your ADS-B receiver
-  poll_interval: 20
+  # Polling interval (seconds) for ADS-B receiver
+  poll_interval: 5
 
-# Optional: PostgreSQL Database connection (Leave empty/commented to use local SQLite: data/skyalert_relational.db)
+# Database Configuration:
+# - Leave empty or set to "sqlite:///data/skyalert_relational.db" for zero-config local SQLite.
+# - Or provide PostgreSQL connection string: "postgresql://user:pass@host:5432/skyalert"
 database:
-  url: "postgresql://username:password@192.168.0.118:5432/skyalert"
+  url: "sqlite:///data/skyalert_relational.db"
 
+# ADS-B Receiver Feed Endpoint (tar1090 / readsb / dump1090 aircraft.json)
 tar1090:
-  # URL to your tar1090 aircraft.json feed
-  # Example: http://192.168.1.100/tar1090/data/aircraft.json
-  url: http://YOUR_RECEIVER_IP/tar1090/data/aircraft.json
+  url: "http://192.168.0.132/tar1090/data/aircraft.json"
 
+# Station Reference Coordinates (used for vicinity alerts, distance, and polar radar)
+station:
+  latitude: 22.5726
+  longitude: 88.3639
+  name: "SkyAlert Primary Node"
+
+# Collector & Smart Sampling Settings (prevents database bloat)
+collector:
+  session_timeout_minutes: 10   # Inactivity gap to close a flight visit
+  telemetry:
+    enabled: true               # Set to false to only store session aggregates without raw observations
+    sample_interval_sec: 30     # Stores breadcrumb trajectory sample every 30s (reduces storage by 95%)
+
+# Telegram Alerting Pipeline
 telegram:
-  enabled: false          # Set to true to enable Telegram alerts
-  bot_token: ""           # Your Telegram Bot API token
-  chat_id: ""             # Your Telegram chat/group ID
+  enabled: true
+  bot_token: "8914548311:AAHjUvcssYq-WIRXMs5pfF-XhZcivik7PWo"
+  chat_id: "1674953261"
+  photo_enabled: true
+  silent: false
 
+# Scenario Alert Triggers
 alerts:
-  squawk: true            # Alert on emergency squawk codes (7500/7600/7700)
-  emergency: false
-  military: false
-  government: false
-  police: false
-  rare_aircraft: false
-  watchlist: false
+  squawk: true         # 7700 General Emergency, 7600 Radio Failure, 7500 Hijack
+  emergency: true
+  military: true       # IAF, USAF, fighters, tactical transports
+  government: true     # VIP, head-of-state, government charters
+  police: true         # Police / law enforcement
+  helicopters: true    # Bell, Eurocopter, AW139, Mi-17, rotorcraft
+  rare_aircraft: true  # A380, An-124, Beluga, B747, C-17, 1-time visitors
+  watchlist: true      # Custom target tracking with vicinity filters
+  formation: false     # Multi-aircraft formation flights
+  geofence: false      # Custom radial zone incursion
 
+# Target Tracking Watchlist
+watchlist:
+  registrations: []
+  operators:
+    - "Indian Air Force"
+    - "NASA"
+    - "Qatar Executive"
+  flights:
+    - "RCH"
+    - "IAF"
+  hex: []
+  # Structured custom targets with vicinity distance constraints:
+  targets:
+    - type: "operator"
+      value: "Indian Air Force"
+      label: "Indian Air Force Defense Fleet"
+      radius_km: 50
+      enabled: true
+
+# Rare Aircraft Types
 rare_aircraft:
   aircraft_types:
     - A388   # Airbus A380
     - A124   # Antonov An-124
-    - A225   # Antonov An-225 Mriya
-    - B748   # Boeing 747-8F
+    - A225   # Antonov An-225
+    - B748   # Boeing 747-8
     - B744   # Boeing 747-400
-    - BLCF   # Beluga XL
+    - BLCF   # Boeing Dreamlifter
     - A3ST   # Airbus Beluga
     - C17    # C-17 Globemaster
     - C5M    # C-5M Super Galaxy
@@ -49,31 +89,30 @@ rare_aircraft:
     - E3TF   # E-3 Sentry AWACS
     - P8     # P-8 Poseidon
 
-watchlist:
-  registrations: []    # e.g. ["VT-ALJ", "N1"]
-  operators:
-    - Indian Air Force
-    - NASA
-  flights:             # Callsign prefixes to watch
-    - RCH
-    - IAF
-  hex: []              # ICAO hex codes e.g. ["400000"]
+# Geofence Perimeter Alarm
+geofence:
+  enabled: false
+  name: "Station Vicinity Zone"
+  latitude: 22.5726
+  longitude: 88.3639
+  radius_km: 50
 
+# Telemetry Anomaly Thresholds
+thresholds:
+  enabled: false
+  min_altitude: 5000
+  max_speed: 520
+
+# Supplementary Data Providers (Optional online lookups)
 providers:
   hexdb:
     enabled: true
   airframes:
     enabled: true
-    api_key: ""        # Optional: airframes.io API key
+    api_key: ""
   airlabs:
-    enabled: false
-    api_key: ""        # Optional: airlabs.co API key
+    enabled: true
+    api_key: ""
   api_ninjas:
-    enabled: false
-    api_key: ""        # Optional: api-ninjas.com API key for aircraft specs
-
-# Optional: Station location for distance/bearing calculations
-# station:
-#   latitude: 22.5726
-#   longitude: 88.3639
-#   name: "My SkyAlert Station"
+    enabled: true
+    api_key: ""

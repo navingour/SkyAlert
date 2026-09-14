@@ -2000,15 +2000,33 @@ class SkyAlertApp {
 
             // ── First sightings / rare & special ───────────────────
             const isSpecial = (p) => {
-                // Note: ADS-B category A5 = "Heavy" (large airliners), NOT military.
-                // Rely on operator/owner keywords only to avoid false positives.
+                // Military / government / law enforcement operator
                 const op = ((p.operator || "") + " " + (p.owner || "")).toUpperCase();
-                return /\b(AIR\s+FORCE|MILITARY|GOVERNMENT|ARMY|NAVY|NAVAL|POLICE|COAST\s+GUARD|BORDER|PATROL)\b/.test(op);
+                return /\b(AIR\s+FORCE|MILITARY|GOVERNMENT|ARMY|NAVY|NAVAL|POLICE|COAST\s+GUARD|BORDER|PATROL|IAF|ISRO|BSF|CRPF|NSG)\b/.test(op);
+            };
+            const isHeli = (p) => {
+                const t = (p.aircraft_type || "").toUpperCase();
+                return /^(B0[67]|B20[56]|B41[2]|B42[79]|EC[34]5|EC55|AS5[05]|A1[036][09]|A139|S7[26]|S92|R2[24]|R44|R66|H1[23][05]|H145|H175|UH60|CH47|AH64|ALH|LCH|MI8|MI17)$/.test(t)
+                    || /heli|rotor/i.test(p.operator || "");
+            };
+            // Operators that are large scheduled commercial airlines — not "rare" just because they flew once
+            const isCommonAirline = (p) => {
+                const op = (p.operator || "").toUpperCase();
+                return /\b(INDIGO|AIR INDIA|SPICEJET|GOAIR|GO FIRST|AKASA|VISTARA|ALLIANCES AIR|AIR ASIA|STARAIR|TRUJET|ALLIANCE|BLUE DART|FLYDUBAI|ETIHAD|EMIRATES|QATAR AIRWAYS|BRITISH AIRWAYS|LUFTHANSA|AIR FRANCE|KLM|SINGAPORE AIRLINES|CATHAY|THAI|TURKISH|UNITED AIRLINES|AMERICAN AIRLINES|DELTA AIRLINES|SOUTHWEST|RYANAIR|EASYJET|DRUK AIR|NEPAL AIRLINES|SRI LANKAN|BIMAN|MALDIVIAN|FLYBE|JET2|WIZZ)\b/.test(op);
             };
             const rare = aircraft
                 .map(p => ({ p, visits: p.total_sessions ?? p.lifetime_visits ?? 0 }))
-                .filter(r => r.visits <= 3 || isSpecial(r.p))
+                .filter(r => {
+                    // Always include military/gov/special operators
+                    if (isSpecial(r.p)) return true;
+                    // Always include helicopters (always interesting)
+                    if (isHeli(r.p)) return true;
+                    // First-ever sighting, but skip common commercial airlines — they're not rare
+                    if (r.visits === 1 && !isCommonAirline(r.p)) return true;
+                    return false;
+                })
                 .sort((a, b) => a.visits - b.visits);
+
 
             setText("formation-sum-rare", rare.length);
 

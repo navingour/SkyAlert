@@ -2202,7 +2202,7 @@ class SkyAlertApp {
                     </div>`;
                 } else {
                     gridEl.innerHTML = `
-                    <div class="rare-aircraft-grid">
+                    <div class="live-aircraft-grid">
                         ${data.rare_aircraft.map(ac => this.generateRareCardHtml(ac)).join('')}
                     </div>`;
                 }
@@ -2215,111 +2215,172 @@ class SkyAlertApp {
         }
     }
 
-    generateRareCardHtml(ac) {
-        const hex      = ac.icao_hex || '—';
-        const callsign = ac.callsign && ac.callsign !== 'None' ? ac.callsign : hex;
-        let reg        = ac.registration && ac.registration !== 'None' && ac.registration !== 'null' ? ac.registration : hex;
-        const visits   = ac.visits ?? ac.visit_count ?? ac.total_sessions ?? 1;
-        const rarity   = ac.rarity || (visits === 1 ? 'very_rare' : visits === 2 ? 'rare' : 'occasional');
-        const mfr      = ac.manufacturer && ac.manufacturer !== 'None' ? ac.manufacturer : '';
-        const model    = ac.model && ac.model !== 'None' ? ac.model : '';
-        const acType   = ac.aircraft_type && ac.aircraft_type !== 'None' ? ac.aircraft_type : '';
-        const operator = ac.operator && ac.operator !== 'None' && ac.operator !== 'null' ? ac.operator : 'Unknown Operator';
-        const opIcao   = ac.operator_icao && ac.operator_icao !== 'None' ? ac.operator_icao : '';
-        const country  = ac.country && ac.country !== 'None' && ac.country !== 'null' ? ac.country : 'Unknown';
-        const first    = ac.first_seen || ac.first_seen_ist || '—';
-        const last     = ac.last_seen || ac.last_seen_ist || '—';
-        const duration = ac.duration || '—';
-        const obs      = ac.total_observations || 0;
+    formatDateIst(val) {
+        if (!val || val === '—' || val === 'None' || val === 'null') return '—';
+        if (typeof val === 'string' && val.includes('IST')) return val;
+        try {
+            const d = new Date(val);
+            if (isNaN(d.getTime())) return val;
+            const options = {
+                timeZone: "Asia/Kolkata",
+                day: "numeric",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false
+            };
+            return new Intl.DateTimeFormat("en-GB", options).format(d) + " IST";
+        } catch {
+            return val;
+        }
+    }
 
-        const rarityColors = {
-            very_rare:  { bg: 'rgba(255,200,40,0.15)',  border: '#f5c518', text: '#f5c518', label: '⭐ Very Rare' },
-            rare:       { bg: 'rgba(56,189,248,0.12)',  border: '#38bdf8', text: '#38bdf8', label: '✦ Rare' },
-            occasional: { bg: 'rgba(167,139,250,0.12)', border: '#a78bfa', text: '#a78bfa', label: '◈ Occasional' },
-        };
-        const rc = rarityColors[rarity] || rarityColors.very_rare;
+    generateRareCardHtml(ac) {
+        const hex = (ac.icao_hex || '—').toUpperCase();
+        const callsign = ac.callsign && ac.callsign !== 'None' && ac.callsign !== 'null' ? ac.callsign : hex;
+        const reg = ac.registration && ac.registration !== 'None' && ac.registration !== 'null' && ac.registration !== '-' ? ac.registration : hex;
+        const visits = ac.visits ?? ac.visit_count ?? ac.total_sessions ?? 1;
+        const rarity = ac.rarity || (visits === 1 ? 'very_rare' : visits === 2 ? 'rare' : 'occasional');
+        const mfr = ac.manufacturer && ac.manufacturer !== 'None' && ac.manufacturer !== 'null' ? ac.manufacturer : '';
+        const model = ac.model && ac.model !== 'None' && ac.model !== 'null' ? ac.model : '';
+        const acType = ac.aircraft_type && ac.aircraft_type !== 'None' && ac.aircraft_type !== 'null' ? ac.aircraft_type : '';
+        const operator = ac.operator && ac.operator !== 'None' && ac.operator !== 'null' ? ac.operator : 'Unknown Operator';
+        const country = ac.country && ac.country !== 'None' && ac.country !== 'null' ? ac.country : 'Unknown';
+        const first = this.formatDateIst(ac.first_seen || ac.first_seen_ist);
+        const last = this.formatDateIst(ac.last_seen || ac.last_seen_ist);
+        const duration = ac.duration || (ac.average_duration ? `${ac.average_duration}m` : '—');
+        const obs = ac.total_observations || 0;
+
+        let badgeLabel = '⭐ VERY RARE';
+        let badgeBg = 'rgba(245, 197, 24, 0.15)';
+        let badgeBorder = '#f5c518';
+        let badgeColor = '#f5c518';
+
+        if (ac.is_helicopter || acType === 'B429' || acType === 'B206' || acType === 'EC45' || (mfr && mfr.toLowerCase().includes('bell'))) {
+            badgeLabel = '🚁 HELICOPTER';
+            badgeBg = 'rgba(56, 189, 248, 0.15)';
+            badgeBorder = '#38bdf8';
+            badgeColor = '#38bdf8';
+        } else if (ac.is_military || (operator && operator.toLowerCase().includes('air force'))) {
+            badgeLabel = '⚔️ MILITARY';
+            badgeBg = 'rgba(239, 68, 68, 0.15)';
+            badgeBorder = '#ef4444';
+            badgeColor = '#ef4444';
+        } else if (visits === 1) {
+            badgeLabel = '⭐ VERY RARE';
+            badgeBg = 'rgba(245, 197, 24, 0.15)';
+            badgeBorder = '#f5c518';
+            badgeColor = '#f5c518';
+        } else if (visits === 2) {
+            badgeLabel = '✦ RARE';
+            badgeBg = 'rgba(56, 189, 248, 0.15)';
+            badgeBorder = '#38bdf8';
+            badgeColor = '#38bdf8';
+        } else {
+            badgeLabel = '◈ OCCASIONAL';
+            badgeBg = 'rgba(167, 139, 250, 0.15)';
+            badgeBorder = '#a78bfa';
+            badgeColor = '#a78bfa';
+        }
+
         const acDesc = [mfr, model].filter(Boolean).join(' ') || (acType ? acType : 'Unknown Type');
+        const cardStyle = `border-left: 3px solid ${badgeBorder};`;
 
         return `
-            <div class="rare-card-v2" onclick="window.SkyAlertApp.openAircraftProfile('${hex}')"
-                 title="Click to open Aircraft Intelligence Profile" style="border-left-color:${rc.border};">
-                <div class="rc-top-row">
-                    <div class="rc-callsign">${callsign}</div>
-                    <span class="rc-badge" style="background:${rc.bg};color:${rc.text};border-color:${rc.border};">
-                        ${rc.label}
-                    </span>
-                </div>
-
-                <div class="rc-identifiers">
-                    <span class="rc-icao">${hex}</span>
-                    ${reg && reg !== '—' ? `<span class="rc-reg">${reg}</span>` : ''}
-                    ${opIcao ? `<span class="rc-opicao">${opIcao}</span>` : ''}
-                </div>
-
-                <div class="rc-divider"></div>
-
-                <div class="rc-details">
-                    <div class="rc-detail-row">
-                        <span class="rc-detail-label">Aircraft</span>
-                        <span class="rc-detail-val">${acDesc}${acType && acDesc !== acType ? ` <em>(${acType})</em>` : ''}</span>
+            <div class="live-card" style="${cardStyle}" onclick="window.SkyAlertApp.openAircraftProfile('${hex}')">
+                <div class="live-card-header">
+                    <div class="live-card-reg-flight">
+                        <div class="live-card-callsign">${callsign}</div>
+                        <div class="live-card-registration">${reg} · ${hex}</div>
                     </div>
-                    <div class="rc-detail-row">
-                        <span class="rc-detail-label">Operator</span>
-                        <span class="rc-detail-val">${operator}</span>
-                    </div>
-                    <div class="rc-detail-row">
-                        <span class="rc-detail-label">Country</span>
-                        <span class="rc-detail-val">${country}</span>
-                    </div>
-                    <div class="rc-detail-row">
-                        <span class="rc-detail-label">First Seen</span>
-                        <span class="rc-detail-val">${first}</span>
-                    </div>
-                    <div class="rc-detail-row">
-                        <span class="rc-detail-label">Last Seen</span>
-                        <span class="rc-detail-val">${last}</span>
-                    </div>
-                    <div class="rc-detail-row">
-                        <span class="rc-detail-label">Duration</span>
-                        <span class="rc-detail-val">${duration}</span>
+                    <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+                        <span class="live-badge" style="background:${badgeBg}; color:${badgeColor}; border:1px solid ${badgeBorder}; font-weight:700;">
+                            ${badgeLabel}
+                        </span>
+                        <span class="live-badge" style="background: rgba(34, 197, 94, 0.15); color: var(--radar-green); border: 1px solid rgba(34, 197, 94, 0.3); font-weight:700;">
+                            ${visits} VISIT${visits === 1 ? '' : 'S'}
+                        </span>
                     </div>
                 </div>
-
-                <div class="rc-footer">
-                    <div class="rc-stat">
-                        <span class="rc-stat-val" style="color:${rc.text};">${visits}</span>
-                        <span class="rc-stat-lbl">visit${visits === 1 ? '' : 's'}</span>
+                <div class="live-card-meta">
+                    <div class="live-meta-row">
+                        <span>Operator</span>
+                        <span class="live-meta-val">${operator}</span>
                     </div>
-                    <div class="rc-stat">
-                        <span class="rc-stat-val">${obs.toLocaleString()}</span>
-                        <span class="rc-stat-lbl">observations</span>
+                    <div class="live-meta-row">
+                        <span>Type / Airframe</span>
+                        <span class="live-meta-val">${acDesc}${acType && acDesc !== acType ? ` (${acType})` : ''}</span>
+                    </div>
+                    <div class="live-meta-row">
+                        <span>Country</span>
+                        <span class="live-meta-val">${country}</span>
+                    </div>
+                    <div class="live-meta-row">
+                        <span>First Seen</span>
+                        <span class="live-meta-val mono" style="font-size: 11px;">${first}</span>
+                    </div>
+                    <div class="live-meta-row">
+                        <span>Last Seen</span>
+                        <span class="live-meta-val mono" style="font-size: 11px; color: var(--radar-green);">${last}</span>
                     </div>
                 </div>
-            </div>`;
+                <div class="live-telemetry-strip">
+                    <div class="telemetry-cell">
+                        <span class="telemetry-lbl">Visits</span>
+                        <span class="telemetry-val" style="color:${badgeColor}; font-weight:800;">${visits}</span>
+                    </div>
+                    <div class="telemetry-cell">
+                        <span class="telemetry-lbl">Observations</span>
+                        <span class="telemetry-val">${obs.toLocaleString()}</span>
+                    </div>
+                    <div class="telemetry-cell">
+                        <span class="telemetry-lbl">Avg Duration</span>
+                        <span class="telemetry-val">${duration}</span>
+                    </div>
+                    <div class="telemetry-cell">
+                        <span class="telemetry-lbl">Station Status</span>
+                        <span class="telemetry-val" style="font-size: 11px; color: var(--radar-cyan);">RECORDED</span>
+                    </div>
+                </div>
+            </div>
+        `;
     }
 
     generateRareRowHtml(ac) {
-        const hex      = ac.icao_hex || '—';
+        const hex      = (ac.icao_hex || '—').toUpperCase();
         const callsign = ac.callsign && ac.callsign !== 'None' ? ac.callsign : hex;
         let reg        = ac.registration && ac.registration !== 'None' && ac.registration !== 'null' ? ac.registration : hex;
         const visits   = ac.visits ?? ac.visit_count ?? ac.total_sessions ?? 1;
-        const rarity   = ac.rarity || (visits === 1 ? 'very_rare' : visits === 2 ? 'rare' : 'occasional');
         const mfr      = ac.manufacturer && ac.manufacturer !== 'None' ? ac.manufacturer : '';
         const model    = ac.model && ac.model !== 'None' ? ac.model : '';
         const acType   = ac.aircraft_type && ac.aircraft_type !== 'None' ? ac.aircraft_type : '';
         const operator = ac.operator && ac.operator !== 'None' && ac.operator !== 'null' ? ac.operator : 'Unknown Operator';
         const country  = ac.country && ac.country !== 'None' && ac.country !== 'null' ? ac.country : 'Unknown';
-        const first    = ac.first_seen || ac.first_seen_ist || '—';
-        const last     = ac.last_seen || ac.last_seen_ist || '—';
+        const first    = this.formatDateIst(ac.first_seen || ac.first_seen_ist);
+        const last     = this.formatDateIst(ac.last_seen || ac.last_seen_ist);
         const duration = ac.duration || '—';
         const obs      = ac.total_observations || 0;
 
-        const rarityMeta = {
-            very_rare:  { color: '#f5c518', label: '⭐ Very Rare' },
-            rare:       { color: '#38bdf8', label: '✦ Rare' },
-            occasional: { color: '#a78bfa', label: '◈ Occasional' },
-        };
-        const rm = rarityMeta[rarity] || rarityMeta.very_rare;
+        let badgeLabel = '⭐ Very Rare';
+        let badgeColor = '#f5c518';
+
+        if (ac.is_helicopter || acType === 'B429' || acType === 'B206' || acType === 'EC45' || (mfr && mfr.toLowerCase().includes('bell'))) {
+            badgeLabel = '🚁 Helicopter';
+            badgeColor = '#38bdf8';
+        } else if (ac.is_military || (operator && operator.toLowerCase().includes('air force'))) {
+            badgeLabel = '⚔️ Military';
+            badgeColor = '#ef4444';
+        } else if (visits === 1) {
+            badgeLabel = '⭐ Very Rare';
+            badgeColor = '#f5c518';
+        } else if (visits === 2) {
+            badgeLabel = '✦ Rare';
+            badgeColor = '#38bdf8';
+        } else {
+            badgeLabel = '◈ Occasional';
+            badgeColor = '#a78bfa';
+        }
+
         const acDesc = [mfr, model].filter(Boolean).join(' ') || (acType ? acType : 'Unknown Type');
         const acDescFull = acType && acDesc !== acType ? `${acDesc} <span style="color:var(--text-muted);font-size:11px">(${acType})</span>` : acDesc;
 
@@ -2327,7 +2388,7 @@ class SkyAlertApp {
             <tr class="rare-list-row" onclick="window.SkyAlertApp.openAircraftProfile('${hex}')"
                 title="Click to open Aircraft Intelligence Profile">
                 <td>
-                    <span class="rare-rarity-badge" style="color:${rm.color};">${rm.label}</span>
+                    <span class="rare-rarity-badge" style="color:${badgeColor};">${badgeLabel}</span>
                 </td>
                 <td class="mono" style="font-weight:700; color:var(--radar-cyan);">${callsign}</td>
                 <td class="mono" style="color:var(--text-muted); font-size:12px;">${hex}</td>
@@ -2337,7 +2398,7 @@ class SkyAlertApp {
                 <td style="font-size:12px; color:var(--text-secondary);">${country}</td>
                 <td style="font-size:11px; color:var(--text-muted);">${first}</td>
                 <td style="font-size:11px; color:var(--text-muted);">${last}</td>
-                <td style="text-align:center; font-family:var(--font-mono); font-weight:700; color:${rm.color};">${visits}</td>
+                <td style="text-align:center; font-family:var(--font-mono); font-weight:700; color:${badgeColor};">${visits}</td>
                 <td style="text-align:center; font-family:var(--font-mono); font-size:12px;">${obs.toLocaleString()}</td>
                 <td style="text-align:center; font-size:12px; color:var(--text-muted);">${duration}</td>
             </tr>`;

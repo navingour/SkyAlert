@@ -65,6 +65,10 @@ def _adapt_pg_query(query: str) -> str:
     # Convert SQLite date('now', 'start of day') to CURRENT_DATE
     query = re.sub(r"date\(\s*['\"]now['\"]\s*,\s*['\"]start of day['\"]\s*\)", "CURRENT_DATE", query, flags=re.IGNORECASE)
 
+    # In PostgreSQL (psycopg2), literal '%' must be escaped as '%%' so it is not treated as a format specifier
+    if "%" in query:
+        query = query.replace("%", "%%")
+
     if "?" in query:
         query = query.replace("?", "%s")
     return query

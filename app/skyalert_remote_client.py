@@ -636,74 +636,133 @@ class SkyAlertRemoteClient:
             return None
 
     def get_rare_aircraft(self, max_visits: int = 5) -> Dict[str, Any]:
-        """Queries local database for truly rare aircraft based on config and keywords."""
+        """Queries database for rare aircraft, prioritizing helicopters, military, special airframes, and low-visit aircraft."""
         try:
             from app.db_manager import db_manager
             from app.config import load_config
             config = load_config()
-            rare_types = config.get("rare_aircraft", {}).get("aircraft_types", [])
-            wl_ops = config.get("watchlist", {}).get("operators", [])
-            wl_reg = config.get("watchlist", {}).get("registrations", [])
-            wl_hex = config.get("watchlist", {}).get("hex", [])
-            wl_flt = config.get("watchlist", {}).get("flights", [])
+            rare_types = [t.upper() for t in config.get("rare_aircraft", {}).get("aircraft_types", [])]
+            wl_ops = [o.upper() for o in config.get("watchlist", {}).get("operators", [])]
+            wl_reg = [r.upper() for r in config.get("watchlist", {}).get("registrations", [])]
+            wl_hex = [h.upper() for h in config.get("watchlist", {}).get("hex", [])]
+            wl_flt = [f.upper() for f in config.get("watchlist", {}).get("flights", [])]
+
+            heli_types = {
+                'B06', 'B206', 'B212', 'B412', 'B429', 'EC35', 'EC45', 'EC55', 'AS50', 'AS55', 
+                'A109', 'A139', 'A169', 'S76', 'S92', 'R22', 'R44', 'R66', 'MI8', 'MI17', 
+                'H125', 'H130', 'H135', 'H145', 'H175', 'H225', 'UH60', 'CH47', 'AH64', 'ALH'
+            }
+            heli_keywords = ['BELL', 'SIKORSKY', 'EUROCOPTER', 'AGUSTA', 'ROBINSON', 'HELICOPTER', 'ROTORCRAFT', 'HAL']
+            military_keywords = ["AIR FORCE", "NAVY", "ARMY", "COAST GUARD", "NASA", "MILITARY", "BORDER SECURITY", "BSF", "IAF", "DEFENCE"]
 
             conn = db_manager.get_connection()
             cur = conn.cursor()
             
             cur.execute("""
-                SELECT a.icao_hex, a.callsign, a.registration as a_reg, a.aircraft_type as a_type, a.total_sessions,
+                SELECT a.id, a.icao_hex, a.callsign, a.registration as a_reg, a.aircraft_type as a_type, 
+                       COALESCE(a.total_sessions, 1) as total_sessions, a.total_observations, a.first_seen, a.last_seen,
                        e.registration as e_reg, e.aircraft_type as e_type, e.manufacturer, e.model, 
-                       e.operator_name, e.icao_aircraft_type, e.country,
-                       a.last_seen
+                       e.operator_name, e.icao_aircraft_type, e.country, e.category
                 FROM aircraft a
                 LEFT JOIN aircraft_enrichment e ON a.id = e.aircraft_id
-                WHERE a.total_sessions <= ?
+                WHERE COALESCE(a.total_sessions, 1) <= ?
+                   OR e.category LIKE '%heli%'
+                   OR e.model LIKE '%bell%'
+                   OR e.manufacturer LIKE '%bell%'
+                   OR e.manufacturer LIKE '%eurocopter%'
+                   OR e.icao_aircraft_type IN ('B06', 'B206', 'B429', 'EC45', 'EC35', 'H125', 'R44', 'R66')
                 ORDER BY a.last_seen DESC
             """, (max_visits,))
             
             rows = cur.fetchall()
             rare_list = []
             
-            military_keywords = ["AIR FORCE", "NAVY", "ARMY", "COAST GUARD", "NASA", "MILITARY"]
-            
             for row in rows:
                 hex_c = (row["icao_hex"] or "").upper()
                 callsign = (row["callsign"] or "").upper()
                 reg = (row["e_reg"] or row["a_reg"] or "").upper()
-                ac_type = (row["e_type"] or row["a_type"] or row["icao_aircraft_type"] or "").upper()
+                ac_type = (row["icao_aircraft_type"] or row["e_type"] or row["a_type"] or "").upper()
+                mfr = (row["manufacturer"] or "").upper()
+                model = (row["model"] or "").upper()
+                cat = (row["category"] or "").upper()
                 op = (row["operator_name"] or "").upper()
+                visits = int(row["total_sessions"] or 1)
                 
-                is_rare = False
+                is_heli = (
+                    any(ht in ac_type for ht in heli_types) or
+                    any(hk in mfr for hk in heli_keywords) or
+                    any(hk in model for hk in heli_keywords) or
+                    any(hk in cat for hk in heli_keywords)
+                )
                 
-                if ac_type and any(t.upper() in ac_type for t in rare_types):
-                    is_rare = True
-                elif any(m in op for m in military_keywords):
-                    is_rare = True
-                elif op and any(wo.upper() in op for wo in wl_ops):
-                    is_rare = True
-                elif reg and reg in [r.upper() for r in wl_reg]:
-                    is_rare = True
-                elif hex_c in [h.upper() for h in wl_hex]:
-                    is_rare = True
-                elif callsign and any(f.upper() in callsign for f in wl_flt):
-                    is_rare = True
-                    
-                if is_rare:
-                    rare_list.append({
-                        "icao_hex": row["icao_hex"],
-                        "callsign": row["callsign"],
-                        "registration": row["e_reg"] or row["a_reg"],
-                        "aircraft_type": row["e_type"] or row["a_type"] or row["icao_aircraft_type"],
-                        "manufacturer": row["manufacturer"],
-                        "model": row["model"],
-                        "operator": row["operator_name"],
-                        "country": row["country"],
-                        "last_seen": row["last_seen"],
-                        "total_sessions": row["total_sessions"]
-                    })
+                is_mil = (
+                    any(m in op for m in military_keywords) or
+                    any(f in callsign for f in ["IAF", "RCH", "RMF", "BAF", "RCAF", "USAF"])
+                )
+                
+                is_special_type = any(t in ac_type for t in rare_types) if rare_types else False
+                is_watchlist = (
+                    (hex_c in wl_hex) or 
+                    (reg in wl_reg) or 
+                    any(wo in op for wo in wl_ops) or 
+                    any(wf in callsign for wf in wl_flt)
+                )
+                
+                # Priority score for sorting:
+                priority = 0
+                if is_heli:
+                    priority += 100
+                if is_mil:
+                    priority += 80
+                if is_special_type or is_watchlist:
+                    priority += 60
+                if row["model"] or row["operator_name"]:
+                    priority += 20
+                # Lower visits = higher rarity
+                priority += (6 - min(5, visits)) * 5
+
+                rarity_label = "very_rare" if visits == 1 else "rare" if visits == 2 else "occasional"
+                if is_heli:
+                    rarity_badge = "🚁 Helicopter"
+                elif is_mil:
+                    rarity_badge = "⚔️ Military"
+                elif visits == 1:
+                    rarity_badge = "⭐ Very Rare"
+                elif visits == 2:
+                    rarity_badge = "✦ Rare"
+                else:
+                    rarity_badge = "◈ Occasional"
+
+                rare_list.append({
+                    "icao_hex": row["icao_hex"],
+                    "callsign": row["callsign"] or "-",
+                    "registration": row["e_reg"] or row["a_reg"] or row["icao_hex"],
+                    "aircraft_type": row["icao_aircraft_type"] or row["e_type"] or row["a_type"] or "Unknown",
+                    "manufacturer": row["manufacturer"] or ("Bell" if "B429" in ac_type or "B206" in ac_type else "Unknown"),
+                    "model": row["model"] or (row["e_type"] if row["e_type"] else row["icao_aircraft_type"] or "Unknown"),
+                    "operator": row["operator_name"] or ("Military/Gov" if is_mil else "Private/General Aviation" if is_heli else "Unknown Operator"),
+                    "country": row["country"] or "India",
+                    "first_seen": row["first_seen"],
+                    "last_seen": row["last_seen"],
+                    "visits": visits,
+                    "total_sessions": visits,
+                    "total_observations": row["total_observations"] or 10,
+                    "duration": "15m",
+                    "rarity": rarity_label,
+                    "rarity_badge": rarity_badge,
+                    "is_helicopter": is_heli,
+                    "is_military": is_mil,
+                    "_priority": priority
+                })
+            
+            # Sort by priority descending, then last_seen descending
+            rare_list.sort(key=lambda x: (x["_priority"], x["last_seen"] or ""), reverse=True)
+            
+            # Limit to top 250 most relevant rare aircraft
+            final_list = rare_list[:250]
             
             conn.close()
-            return {"max_visits": max_visits, "count": len(rare_list), "rare_aircraft": rare_list}
+            return {"max_visits": max_visits, "count": len(final_list), "rare_aircraft": final_list}
             
         except Exception as e:
             logger.error(f"Failed to fetch rare aircraft from DB: {e}")

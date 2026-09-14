@@ -34,13 +34,32 @@ echo "  ✈  SkyAlert Station Control - Starting..."
 echo "  ────────────────────────────────────────────"
 echo ""
 
-# Start the backend engine in the background
-echo "  [1/2] Starting ADS-B backend engine..."
-python3 -m app.backend.main &
-BACKEND_PID=$!
-echo "        Backend PID: $BACKEND_PID"
+# Check if web-only mode is requested
+WEB_ONLY=false
+for arg in "$@"; do
+    case $arg in
+        --web-only|--no-collector|-w)
+            WEB_ONLY=true
+            shift
+            ;;
+    esac
+done
 
-sleep 2
+if [ "$COLLECTOR" = "false" ] || [ "$COLLECTOR" = "0" ]; then
+    WEB_ONLY=true
+fi
+
+# Start the backend engine in the background (unless --web-only is specified)
+if [ "$WEB_ONLY" = true ]; then
+    echo "  ℹ️  Web-only mode active (Collector is DISABLED)."
+    BACKEND_PID=""
+else
+    echo "  [1/2] Starting ADS-B backend engine..."
+    python3 -m app.backend.main &
+    BACKEND_PID=$!
+    echo "        Backend PID: $BACKEND_PID"
+    sleep 2
+fi
 
 # Ensure port 8080 is clear
 OLD_PORT_PID=$(lsof -ti:8080 2>/dev/null)

@@ -292,6 +292,13 @@ class UnifiedCollector:
             if rule_key not in active.alerted_rule_keys:
                 active.alerted_rule_keys.add(rule_key)
                 try:
+                    # Save to database alert_history
+                    db_manager.record_alert(alert, plane)
+                except Exception as dbe:
+                    logger.debug(f"Error saving alert history for {hex_code}: {dbe}")
+                
+                try:
+                    # Dispatch to Telegram / Notifiers
                     self.notifier.send(alert, plane)
                 except Exception as e:
                     logger.error(f"Error dispatching alert {rule_key} for {hex_code}: {e}")

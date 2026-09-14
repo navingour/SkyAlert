@@ -914,6 +914,111 @@ class DatabaseManager:
         finally:
             conn.close()
 
+    def record_alert(self, alert: Dict[str, Any], plane: Dict[str, Any]) -> int:
+        now_dt = datetime.now(timezone.utc)
+        now_val = now_dt if self.is_pg else now_dt.isoformat()
+        ph = self.ph
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            hex_code = (plane.get("hex") or plane.get("icao_hex") or "").strip().upper()
+            flight = (plane.get("flight") or plane.get("callsign") or "").strip()
+            reg = plane.get("registration") or plane.get("r")
+            ac_type = plane.get("aircraft_type") or plane.get("type_code") or plane.get("t")
+            operator = plane.get("operator") or plane.get("owner")
+            title = alert.get("title") or alert.get("name") or "ALERT"
+            alert_type = alert.get("type") or title
+            priority = int(alert.get("priority", 3))
+            squawk = plane.get("squawk")
+            alt = plane.get("alt_baro") or plane.get("altitude_ft")
+            try:
+                alt = int(alt) if alt is not None and str(alt).isdigit() else None
+            except Exception:
+                alt = None
+            speed = plane.get("gs") or plane.get("speed_kts")
+            try:
+                speed = float(speed) if speed is not None else None
+            except Exception:
+                speed = None
+            dist = plane.get("r_dst") or plane.get("distance_km")
+            try:
+                dist = float(dist) if dist is not None else None
+            except Exception:
+                dist = None
+            raw_json = json.dumps(plane)
+
+            if self.is_pg:
+                cur.execute(f"""
+                    INSERT INTO alert_history (
+                        timestamp, hex, flight, registration, aircraft_type, operator,
+                        alert_type, title, priority, squawk, altitude, speed, distance, raw_json, updated_at
+                    ) VALUES (
+                        {ph}, {ph}, {ph}, {ph}, {ph}, {ph},
+                        {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}
+                    ) RETURNING id;
+                """, (
+                    now_val, hex_code, flight, reg, ac_type, operator,
+                    alert_type, title, priority, squawk, alt, speed, dist, raw_json, now_val
+                ))
+                row = cur.fetchone()
+                alert_id = row["id"] if isinstance(row, dict) else row[0]
+            else:
+                cur.execute("""
+                    INSERT INTO alert_history (
+                        timestamp, hex, flight, registration, aircraft_type, operator,
+                        alert_type, title, priority, squawk, altitude, speed, distance, raw_json, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    now_val, hex_code, flight, reg, ac_type, operator,
+                    alert_type, title, priority, squawk, alt, speed, dist, raw_json, now_val
+                ))
+                alert_id = cur.lastrowid
+            conn.commit()
+            return alert_id
+        except Exception as e:
+            logger.error(f"Error saving alert to DB: {e}")
+            return 0
+        finally:
+            conn.close()
+
+    def get_alert_history(self, limit: int = 100) -> List[Dict[str, Any]]:
+        conn = self.get_connection()
+        ph = self.ph
+        try:
+            cur = conn.cursor()
+            cur.execute(f"""
+                SELECT id, timestamp, updated_at, hex, flight, registration,
+                       aircraft_type, operator, alert_type, title, priority, squawk, altitude, speed, distance
+                FROM alert_history
+                ORDER BY id DESC
+                LIMIT {ph}
+            """, (limit,))
+            rows = cur.fetchall()
+            alerts = []
+            for r in rows:
+                alerts.append({
+                    "id": r["id"],
+                    "timestamp": _serialize_row_val(r["updated_at"] or r["timestamp"]),
+                    "hex": r["hex"],
+                    "flight": r["flight"] or "-",
+                    "registration": r["registration"] or r["hex"],
+                    "aircraft_type": r["aircraft_type"] or "Unknown",
+                    "operator": r["operator"] or "Unknown Operator",
+                    "alert_type": r["alert_type"] or r["title"] or "ALERT",
+                    "title": r["title"] or r["alert_type"] or "ALERT",
+                    "priority": r["priority"] or 3,
+                    "squawk": r["squawk"] or "-",
+                    "altitude": r["altitude"],
+                    "speed": r["speed"],
+                    "distance": r["distance"]
+                })
+            return alerts
+        except Exception as e:
+            logger.error(f"Error reading alert history: {e}")
+            return []
+        finally:
+            conn.close()
+
 
 db_manager = DatabaseManager()
 

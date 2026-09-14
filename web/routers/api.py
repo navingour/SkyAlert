@@ -1519,8 +1519,10 @@ async def trigger_enrichment(id_or_hex: str):
         })
 
 @router.get("/alerts")
-async def get_alerts_history(limit: int = 100):
-    return JSONResponse(status_service.recent_alerts(limit))
+async def get_alerts_recent(limit: int = 100):
+    from app.db_manager import db_manager
+    alerts = db_manager.get_alert_history(limit=limit)
+    return JSONResponse(alerts)
 
 @router.get("/rare-aircraft")
 async def get_rare_aircraft(max_visits: int = Query(5, ge=1, le=100)):
@@ -1618,7 +1620,8 @@ async def get_aircraft_replay(id_or_hex: str):
 async def get_alerts_history(limit: int = 200):
     """Returns a historical array of triggered alerts."""
     try:
-        alerts = event_database.latest(limit=limit)
+        from app.db_manager import db_manager
+        alerts = db_manager.get_alert_history(limit=limit)
         return JSONResponse({"alerts": alerts})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -1797,6 +1800,26 @@ async def send_telegram_test_message(request: Request):
 🕒 <i>{now_ist}</i>"""
 
         result = notifier.send(test_msg)
+
+        try:
+            from app.db_manager import db_manager
+            db_manager.record_alert(
+                {"title": "TEST NOTIFICATION", "type": "SYSTEM TEST", "priority": 3},
+                {
+                    "hex": "TEST01",
+                    "flight": "SKYALERT",
+                    "registration": "VT-TEST",
+                    "aircraft_type": "TEST",
+                    "operator": "SkyAlert Dispatcher",
+                    "squawk": "7700",
+                    "altitude_ft": 35000,
+                    "speed_kts": 450,
+                    "distance_km": 15.0
+                }
+            )
+        except Exception:
+            pass
+
         return JSONResponse({
             "status": "success",
             "message": "Test message delivered to Telegram successfully!",

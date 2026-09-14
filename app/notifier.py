@@ -77,6 +77,35 @@ class Notifier:
         if tags:
             message += f"🏷 <b>Tags:</b> {', '.join(tags)}\n"
 
+        # -------------------------------------------------
+        # Direct App / Live Tracking Links
+        # (Flightradar24 & Plane Finder Universal Links)
+        # -------------------------------------------------
+        tracker_links = []
+        if flight and flight != "N/A":
+            fr24_url = f"https://www.flightradar24.com/{flight}"
+            pf_url = f"https://planefinder.net/flight/{flight}"
+        elif registration and registration != "N/A" and registration != "Loading...":
+            fr24_url = f"https://www.flightradar24.com/data/aircraft/{registration}"
+            pf_url = f"https://planefinder.net/data/aircraft/{registration}"
+        elif hexcode:
+            fr24_url = f"https://www.flightradar24.com/{hexcode}"
+            pf_url = f"https://planefinder.net/data/aircraft/{hexcode}"
+        else:
+            fr24_url = None
+            pf_url = None
+
+        if fr24_url:
+            tracker_links.append(f'<a href="{fr24_url}">Flightradar24</a>')
+        if pf_url:
+            tracker_links.append(f'<a href="{pf_url}">Plane Finder</a>')
+        if hexcode:
+            adsb_url = f"https://globe.adsbexchange.com/?icao={hexcode.lower()}"
+            tracker_links.append(f'<a href="{adsb_url}">ADS-B Exchange</a>')
+
+        if tracker_links:
+            message += f"\n🔗 <b>Live Tracking:</b> {' · '.join(tracker_links)}\n"
+
         time_str = datetime.now().strftime('%d %b %Y %H:%M:%S IST')
         message += f"\n🕒 <i>{time_str}</i>"
 

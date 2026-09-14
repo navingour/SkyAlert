@@ -77,6 +77,29 @@ def _serialize_row_val(v):
         return float(v) if "." in str(v) else int(v)
     return v
 
+def _format_ist_datetime(dt_val: Any) -> str:
+    if not dt_val:
+        return "-"
+    try:
+        if isinstance(dt_val, str):
+            dt_str = dt_val.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(dt_str)
+        elif isinstance(dt_val, datetime):
+            dt = dt_val
+        else:
+            return str(dt_val)
+
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        
+        ist_dt = dt.astimezone(IST_TZ)
+        day = ist_dt.strftime("%d").lstrip("0")
+        month = ist_dt.strftime("%b")
+        time_str = ist_dt.strftime("%H:%M:%S")
+        return f"{day} {month} {time_str} IST"
+    except Exception:
+        return str(dt_val)
+
 
 def _adapt_pg_query(query: str) -> str:
     # Convert SQLite strftime('%s', A) - strftime('%s', B) to PostgreSQL epoch difference
@@ -996,9 +1019,11 @@ class DatabaseManager:
             rows = cur.fetchall()
             alerts = []
             for r in rows:
+                raw_ts = r["updated_at"] or r["timestamp"]
                 alerts.append({
                     "id": r["id"],
-                    "timestamp": _serialize_row_val(r["updated_at"] or r["timestamp"]),
+                    "timestamp": _serialize_row_val(raw_ts),
+                    "timestamp_ist": _format_ist_datetime(raw_ts),
                     "hex": r["hex"],
                     "flight": r["flight"] or "-",
                     "registration": r["registration"] or r["hex"],

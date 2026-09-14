@@ -1699,8 +1699,7 @@ class SkyAlertApp {
             if (data.alerts && data.alerts.length > 0) {
                 tbody.innerHTML = data.alerts.map(a => {
                     const priorityClass = a.priority === 1 ? "priority-1" : (a.priority === 2 ? "priority-2" : "priority-3");
-                    const dateObj = new Date(a.timestamp + "Z");
-                    const timeStr = dateObj.toLocaleString();
+                    const timeStr = a.timestamp_ist || this.formatDateIst(a.timestamp);
                     const hexCode = a.hex || "-";
                     const flight = a.flight || "-";
                     const reg = a.registration || "-";

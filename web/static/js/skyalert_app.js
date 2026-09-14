@@ -1699,7 +1699,8 @@ class SkyAlertApp {
             if (data.alerts && data.alerts.length > 0) {
                 tbody.innerHTML = data.alerts.map(a => {
                     const priorityClass = a.priority === 1 ? "priority-1" : (a.priority === 2 ? "priority-2" : "priority-3");
-                    const timeStr = a.timestamp_ist || this.formatDateIst(a.timestamp);
+                    const rawTime = a.timestamp_ist && a.timestamp_ist !== '-' && a.timestamp_ist !== '—' ? a.timestamp_ist : a.timestamp;
+                    const timeStr = rawTime ? this.formatDateIst(rawTime) : '—';
                     const hexCode = a.hex || "-";
                     const flight = a.flight || "-";
                     const reg = a.registration || "-";
@@ -2329,10 +2330,18 @@ class SkyAlertApp {
     }
 
     formatDateIst(val) {
-        if (!val || val === '—' || val === 'None' || val === 'null') return '—';
+        if (!val || val === '—' || val === '-' || val === 'None' || val === 'null') return '—';
         if (typeof val === 'string' && val.includes('IST')) return val;
         try {
-            const d = new Date(val);
+            // Normalise Python datetime strings: "2026-09-14T10:01:22+00:00" or "2026-09-14T10:01:22"
+            let str = String(val).trim();
+            // Replace space separator with T (SQLite stores "2026-09-14 10:01:22")
+            str = str.replace(' ', 'T');
+            // If no timezone info present, assume UTC
+            if (!str.endsWith('Z') && !str.includes('+') && str.length <= 19) {
+                str += 'Z';
+            }
+            const d = new Date(str);
             if (isNaN(d.getTime())) return val;
             const options = {
                 timeZone: "Asia/Kolkata",
@@ -2340,6 +2349,7 @@ class SkyAlertApp {
                 month: "short",
                 hour: "2-digit",
                 minute: "2-digit",
+                second: "2-digit",
                 hour12: false
             };
             return new Intl.DateTimeFormat("en-GB", options).format(d) + " IST";
@@ -2347,6 +2357,7 @@ class SkyAlertApp {
             return val;
         }
     }
+
 
     generateRareCardHtml(ac) {
         const hex = (ac.icao_hex || '—').toUpperCase();

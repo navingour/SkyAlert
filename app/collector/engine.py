@@ -2,7 +2,7 @@ import asyncio
 import math
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional, Set
+from typing import Dict, Any, Optional, Set, Tuple
 from datetime import datetime, timezone, timedelta
 
 import httpx
@@ -148,6 +148,11 @@ class UnifiedCollector:
         self.is_running = False
         self.last_cleanup_time = datetime.now(timezone.utc)
 
+        # Global per-aircraft alert cooldown: (hex, rule_key) -> last_notified datetime
+        # Prevents duplicate Telegram messages across session boundaries (45-min window)
+        self.ALERT_COOLDOWN_SECONDS = 45 * 60  # 45 minutes
+        self._alert_cooldown: Dict[Tuple[str, str], datetime] = {}
+
     async def start(self):
         """Starts the unified collector background loop."""
         self.is_running = True
@@ -287,21 +292,37 @@ class UnifiedCollector:
         plane["special"] = special
         alerts = self.rule_engine.evaluate(plane, special)
 
+        now_for_cooldown = datetime.now(timezone.utc)
         for alert in alerts:
             rule_key = alert.get("title", "ALERT")
+            cooldown_key = (hex_code, rule_key)
+            last_notified = self._alert_cooldown.get(cooldown_key)
+
+            # Check global 45-minute cooldown (cross-session deduplication)
+            in_cooldown = (
+                last_notified is not None
+                and (now_for_cooldown - last_notified).total_seconds() < self.ALERT_COOLDOWN_SECONDS
+            )
+
             if rule_key not in active.alerted_rule_keys:
                 active.alerted_rule_keys.add(rule_key)
                 try:
-                    # Save to database alert_history
+                    # Always record to alert_history DB (for the log dashboard)
                     db_manager.record_alert(alert, plane)
                 except Exception as dbe:
                     logger.debug(f"Error saving alert history for {hex_code}: {dbe}")
-                
-                try:
-                    # Dispatch to Telegram / Notifiers
-                    self.notifier.send(alert, plane)
-                except Exception as e:
-                    logger.error(f"Error dispatching alert {rule_key} for {hex_code}: {e}")
+
+                if not in_cooldown:
+                    # Update cooldown timestamp before dispatching
+                    self._alert_cooldown[cooldown_key] = now_for_cooldown
+                    try:
+                        # Dispatch to Telegram / Notifiers
+                        self.notifier.send(alert, plane)
+                    except Exception as e:
+                        logger.error(f"Error dispatching alert {rule_key} for {hex_code}: {e}")
+                else:
+                    remaining = int(self.ALERT_COOLDOWN_SECONDS - (now_for_cooldown - last_notified).total_seconds()) // 60
+                    logger.debug(f"Alert cooldown active for {hex_code} [{rule_key}] — suppressed, {remaining}m remaining")
 
     def start_session_in_db(self, ac_id: int, now_dt: datetime, dist_km: Optional[float], bearing: Optional[float]) -> int:
         """Inserts a new session record into detection_sessions, or reuses active unclosed session."""

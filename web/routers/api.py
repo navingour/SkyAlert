@@ -63,8 +63,39 @@ async def get_dashboard(timeframe: str = Query("today")):
 ADS_B_ROUTE_CACHE = {}
 _route_executor = ThreadPoolExecutor(max_workers=8)
 
+def _persist_adsb_route_to_db(hex_code: str, callsign: str, route_dict: Dict[str, Any]):
+    """Persists resolved route data directly into PostgreSQL detection_sessions table."""
+    if not route_dict:
+        return
+    try:
+        conn = db_manager.get_connection()
+        cur = conn.cursor()
+        ph = "%s" if db_manager.is_pg else "?"
+        o_iata = route_dict.get("origin_iata")
+        o_icao = route_dict.get("origin_icao")
+        d_iata = route_dict.get("destination_iata")
+        d_icao = route_dict.get("destination_icao")
+        
+        hx = (hex_code or "").strip().upper()
+        if hx:
+            cur.execute(f"""
+                UPDATE detection_sessions SET
+                    origin_iata = {ph}, origin_icao = {ph},
+                    destination_iata = {ph}, destination_icao = {ph}
+                WHERE aircraft_id = (SELECT id FROM aircraft WHERE UPPER(icao_hex) = {ph} LIMIT 1)
+                  AND (origin_iata IS NULL OR origin_iata = '' OR destination_iata IS NULL OR destination_iata = '')
+            """, (o_iata, o_icao, d_iata, d_icao, hx))
+            conn.commit()
+    except Exception as e:
+        logger.debug(f"Failed persisting route to DB for {hex_code}: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
 def _fetch_adsbdb_route_sync(callsign: str, hex_code: str):
-    """Blocking ADSBDB lookup — run in thread executor only."""
+    """Blocking ADSBDB lookup — run in thread executor and persist to DB."""
     cs = (callsign or "").strip().upper()
     hex_u = (hex_code or "").strip().upper()
     key = cs if cs and cs != "-" else hex_u
@@ -93,6 +124,9 @@ def _fetch_adsbdb_route_sync(callsign: str, hex_code: str):
                     ADS_B_ROUTE_CACHE[key] = route_dict
                     if cs and cs != "-": ADS_B_ROUTE_CACHE[cs] = route_dict
                     if hex_u: ADS_B_ROUTE_CACHE[hex_u] = route_dict
+                    
+                    # Persist directly into DB
+                    _persist_adsb_route_to_db(hex_u, cs, route_dict)
                     return key, route_dict
     except Exception:
         pass

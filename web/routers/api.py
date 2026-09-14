@@ -158,15 +158,31 @@ async def get_live():
 
         # Attach cached ADSBDB routes or dispatch background enrichment
         for item in enriched_planes:
+            hex_u = item.get("_hex")
+            cs = item.get("_callsign")
             if not item.get("route"):
-                hex_u = item.get("_hex")
-                cs = item.get("_callsign")
                 key = cs if cs and cs != "-" else hex_u
                 if key and key in ADS_B_ROUTE_CACHE:
                     item["route"] = ADS_B_ROUTE_CACHE[key]
+                elif hex_u and hex_u in ADS_B_ROUTE_CACHE:
+                    item["route"] = ADS_B_ROUTE_CACHE[hex_u]
+                elif cs and cs in ADS_B_ROUTE_CACHE:
+                    item["route"] = ADS_B_ROUTE_CACHE[cs]
                 elif key:
                     # Async background fetch into cache for subsequent polls
                     _route_executor.submit(_fetch_adsbdb_route_sync, cs, hex_u)
+
+            # Format route string if route object exists
+            r_obj = item.get("route")
+            if isinstance(r_obj, dict):
+                orig = r_obj.get("origin_iata") or r_obj.get("origin_icao") or ""
+                dest = r_obj.get("destination_iata") or r_obj.get("destination_icao") or ""
+                if orig and dest:
+                    item["route_short"] = f"{orig} → {dest}"
+                elif r_obj.get("route"):
+                    item["route_short"] = r_obj.get("route")
+            elif isinstance(r_obj, str) and r_obj.strip():
+                item["route_short"] = r_obj.strip()
 
         # Clean up temp fields
         for item in enriched_planes:
@@ -433,6 +449,13 @@ async def get_aircraft_profile(id_or_hex: str):
                         "destination_icao": adsb_r.get("destination_icao"),
                         "route": f"{o_code} → {d_code}"
                     }
+
+    if default_route:
+        if hex_u:
+            ADS_B_ROUTE_CACHE[hex_u] = default_route
+        cs_u = (profile.get("callsign") or "").strip().upper()
+        if cs_u and cs_u != "-":
+            ADS_B_ROUTE_CACHE[cs_u] = default_route
 
     db_by_id = {s["id"]: s for s in db_sessions} if db_sessions else {}
     enriched_sessions = []
@@ -1408,6 +1431,8 @@ async def trigger_enrichment(id_or_hex: str):
             db.upsert_enrichment(ac_id, enrich_data)
             
         if route_data and (route_data.get("origin_icao") or route_data.get("origin_iata")):
+            hex_upper = id_or_hex.strip().upper()
+            ADS_B_ROUTE_CACHE[hex_upper] = route_data
             session_id = db.get_active_session(ac_id)
             if session_id:
                 db.update_session_route(session_id, route_data)

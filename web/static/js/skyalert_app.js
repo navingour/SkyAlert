@@ -426,6 +426,26 @@ class SkyAlertApp {
         const cardStyle = isEmergency ? 'border: 2px solid var(--radar-red); background: rgba(239, 68, 68, 0.05); box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);' : '';
         const squawkBadge = isEmergency ? `<span class="live-badge" style="background: var(--radar-red); color: white; border: none; font-size: 10px; font-weight: 800; animation: pulse 1s infinite;">🚨 SQUAWK ${squawk}</span>` : '';
 
+        let routeDisplay = 'Unavailable';
+        let hasRoute = false;
+        if (plane.route_short && plane.route_short !== 'Route unavailable' && plane.route_short !== '-') {
+            routeDisplay = plane.route_short;
+            hasRoute = true;
+        } else if (route) {
+            if (typeof route === 'string' && route !== 'Route unavailable' && route !== '-') {
+                routeDisplay = route;
+                hasRoute = true;
+            } else if (route.origin_iata || route.origin_icao || route.destination_iata || route.destination_icao) {
+                const orig = route.origin_iata || route.origin_icao || '???';
+                const dest = route.destination_iata || route.destination_icao || '???';
+                routeDisplay = `${orig} → ${dest}`;
+                hasRoute = true;
+            } else if (route.route && route.route !== 'Route unavailable' && route.route !== '-') {
+                routeDisplay = route.route;
+                hasRoute = true;
+            }
+        }
+
         return `
             <div class="live-card" style="${cardStyle}" onclick="window.SkyAlertApp.openAircraftProfile('${hex}')">
                 <div class="live-card-header">
@@ -450,8 +470,8 @@ class SkyAlertApp {
                     </div>
                     <div class="live-meta-row">
                         <span>Route</span>
-                        <span class="live-meta-val" data-route-callsign="${callsign}" data-route-hex="${hex}" style="${route && (route.origin_iata || route.origin_icao) ? 'color: var(--radar-green); font-weight: 700;' : ''}">
-                            ${ route ? `${route.origin_iata || route.origin_icao} → ${route.destination_iata || route.destination_icao}` : 'Unavailable' }
+                        <span class="live-meta-val" data-route-callsign="${callsign}" data-route-hex="${hex}" style="${hasRoute ? 'color: var(--radar-green); font-weight: 700;' : ''}">
+                            ${routeDisplay}
                         </span>
                     </div>
                     ${tempC || windMs ? `

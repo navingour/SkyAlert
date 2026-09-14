@@ -131,7 +131,7 @@ class SkyAlertApp {
         const hash = window.location.hash.replace("#", "") || "dashboard";
         if (hash.startsWith("aircraft-profile/")) {
             const hex = hash.split("/")[1];
-            this.openAircraftProfile(hex);
+            this.loadAircraftProfile(hex);
             return;
         }
 
@@ -877,9 +877,19 @@ class SkyAlertApp {
         }
     }
 
-    async openAircraftProfile(idOrHex) {
+    openAircraftProfile(idOrHex, inNewTab = true) {
+        const hex = (idOrHex || '').trim().toUpperCase();
+        if (!hex) return;
+        if (inNewTab) {
+            window.open(`/#aircraft-profile/${encodeURIComponent(hex)}`, '_blank');
+        } else {
+            window.location.hash = `aircraft-profile/${encodeURIComponent(hex)}`;
+            this.loadAircraftProfile(hex);
+        }
+    }
+
+    async loadAircraftProfile(idOrHex) {
         this.selectedAircraftHex = idOrHex;
-        window.location.hash = `aircraft-profile/${idOrHex}`;
         this.switchView("aircraft-profile");
 
         const container = document.getElementById("view-aircraft-profile");
@@ -1554,7 +1564,7 @@ class SkyAlertApp {
             const data = await res.json();
             if (data.status === "success") {
                 alert(`Enrichment updated for ${hex}`);
-                this.openAircraftProfile(hex);
+                this.loadAircraftProfile(hex);
             } else {
                 alert(`Enrichment notice: ${data.message}`);
             }

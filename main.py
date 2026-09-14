@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 SkyAlert Master Application Entry Point
-Starts both the Unified ADS-B Collector and the Web Intelligence Platform concurrently.
+Starts the Unified ADS-B Collector & Web Intelligence Platform.
 """
 
 import sys
@@ -9,7 +9,6 @@ import os
 import argparse
 import asyncio
 import logging
-import signal
 from pathlib import Path
 
 # Add project root to sys.path
@@ -24,40 +23,6 @@ logging.basicConfig(
 logger = logging.getLogger("skyalert.main")
 
 
-async def run_unified_app(web_only: bool = False, collector_only: bool = False, host: str = "0.0.0.0", port: int = 8080):
-    tasks = []
-
-    # 1. Start Collector if not web_only
-    if not web_only:
-        from app.collector.engine import collector_engine
-        collector_task = asyncio.create_task(collector_engine.start())
-        tasks.append(collector_task)
-    else:
-        logger.info("ℹ️  Running in WEB-ONLY mode (Collector disabled).")
-
-    # 2. Start Web Server if not collector_only
-    if not collector_only:
-        import uvicorn
-        from web.main import app as fastapi_app
-
-        config = uvicorn.Config(app=fastapi_app, host=host, port=port, log_level="info", access_log=False)
-        server = uvicorn.Server(config)
-        server_task = asyncio.create_task(server.serve())
-        tasks.append(server_task)
-    else:
-        logger.info("ℹ️  Running in HEADLESS COLLECTOR-ONLY mode (Web server disabled).")
-
-    # Wait for completion or shutdown
-    try:
-        await asyncio.gather(*tasks)
-    except asyncio.CancelledError:
-        logger.info("Application shutdown requested.")
-    finally:
-        if not web_only:
-            from app.collector.engine import collector_engine
-            await collector_engine.close()
-
-
 def main():
     parser = argparse.ArgumentParser(description="SkyAlert Aviation Intelligence & ADS-B Fixed Station Platform")
     parser.add_argument("--web-only", "-w", action="store_true", help="Start only the web dashboard (disable collector)")
@@ -70,33 +35,24 @@ def main():
     print("  ✈  SkyAlert Aviation Intelligence & Fixed Station Control")
     print("=" * 65 + "\n")
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    main_task = loop.create_task(run_unified_app(
-        web_only=args.web_only,
-        collector_only=args.collector_only,
-        host=args.host,
-        port=args.port
-    ))
-
-    def handle_signal():
-        logger.info("Stopping SkyAlert services...")
-        main_task.cancel()
-
-    for sig in (signal.SIGINT, signal.SIGTERM):
+    if args.collector_only:
+        # Headless collector only
+        from app.collector.engine import collector_engine
         try:
-            loop.add_signal_handler(sig, handle_signal)
-        except (NotImplementedError, AttributeError):
-            pass
+            asyncio.run(collector_engine.start())
+        except KeyboardInterrupt:
+            logger.info("Collector interrupted by user.")
+        finally:
+            asyncio.run(collector_engine.close())
+    else:
+        # Web dashboard + background collector (via lifespan)
+        if args.web_only:
+            os.environ["ENABLE_COLLECTOR"] = "false"
+        else:
+            os.environ["ENABLE_COLLECTOR"] = "true"
 
-    try:
-        loop.run_until_complete(main_task)
-    except KeyboardInterrupt:
-        logger.info("Keyboard interrupt received.")
-    finally:
-        loop.close()
-        logger.info("SkyAlert terminated safely.")
+        import uvicorn
+        uvicorn.run("web.main:app", host=args.host, port=args.port, reload=False, log_level="info")
 
 
 if __name__ == "__main__":

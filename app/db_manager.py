@@ -24,19 +24,44 @@ CONFIG_FILE = BASE_DIR / "config" / "config.yaml"
 IST_TZ = timezone(timedelta(hours=5, minutes=30))
 
 
+import socket
+from urllib.parse import urlparse
+
+def _is_pg_reachable(pg_url: str, timeout: float = 0.8) -> bool:
+    try:
+        parsed = urlparse(pg_url)
+        host = parsed.hostname or "localhost"
+        port = parsed.port or 5432
+        s = socket.create_connection((host, port), timeout=timeout)
+        s.close()
+        return True
+    except Exception:
+        return False
+
+def _normalize_pg_url(url: str) -> str:
+    if not url:
+        return url
+    if "connect_timeout=" not in url:
+        sep = "&" if "?" in url else "?"
+        url += f"{sep}connect_timeout=3"
+    if "sslmode=" not in url:
+        sep = "&" if "?" in url else "?"
+        url += f"{sep}sslmode=disable"
+    return url
+
 def _get_configured_db_url() -> Optional[str]:
     url = os.environ.get("DATABASE_URL", "").strip()
     if url:
-        return url
+        return _normalize_pg_url(url)
     if CONFIG_FILE.exists():
         try:
             with open(CONFIG_FILE, "r") as f:
                 cfg = yaml.safe_load(f) or {}
             db_cfg = cfg.get("database", {})
             if isinstance(db_cfg, dict) and db_cfg.get("url"):
-                return db_cfg["url"].strip()
+                return _normalize_pg_url(db_cfg["url"].strip())
             elif isinstance(db_cfg, str) and db_cfg.strip():
-                return db_cfg.strip()
+                return _normalize_pg_url(db_cfg.strip())
         except Exception as e:
             logger.debug(f"Could not read database URL from config.yaml: {e}")
     return None
@@ -176,16 +201,16 @@ class DatabaseManager:
     def __init__(self):
         self.pg_url = _get_configured_db_url()
         self.is_pg = bool(self.pg_url and ("postgres" in self.pg_url or "postgresql" in self.pg_url))
+        self._pg_failed = False
+        if self.is_pg and not _is_pg_reachable(self.pg_url, timeout=0.8):
+            logger.info(f"PostgreSQL target ({self.pg_url.split('@')[-1] if '@' in self.pg_url else self.pg_url}) unreachable, using SQLite: {SQLITE_DB_PATH}")
+            self.is_pg = False
+            self._pg_failed = True
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         try:
             self.init_db()
         except Exception as e:
             logger.warning(f"init_db non-fatal warning: {e}")
-        if not self.is_pg:
-            try:
-                self.migrate_legacy_data()
-            except Exception as e:
-                logger.warning(f"migrate_legacy_data non-fatal warning: {e}")
 
     @property
     def ph(self) -> str:
@@ -196,15 +221,30 @@ class DatabaseManager:
         return "%s" if self.is_pg else "?"
 
     def get_connection(self):
-        if self.is_pg:
+        if self.is_pg and not self._pg_failed:
             try:
                 import psycopg2
                 import psycopg2.extras
-                conn = psycopg2.connect(self.pg_url, cursor_factory=psycopg2.extras.RealDictCursor)
+                conn = psycopg2.connect(self.pg_url, connect_timeout=2, cursor_factory=psycopg2.extras.RealDictCursor)
                 return PgConnectionWrapper(conn)
             except Exception as e:
-                logger.warning(f"PostgreSQL connection failed ({e}), falling back to SQLite: {SQLITE_DB_PATH}")
-                self.is_pg = False
+                # Retry with sslmode=disable if macOS LibreSSL negotiation failed
+                try:
+                    import psycopg2
+                    import psycopg2.extras
+                    fallback_url = self.pg_url
+                    if "sslmode=" in fallback_url:
+                        fallback_url = re.sub(r'sslmode=[^&]+', 'sslmode=disable', fallback_url)
+                    else:
+                        sep = "&" if "?" in fallback_url else "?"
+                        fallback_url += f"{sep}sslmode=disable"
+                    conn = psycopg2.connect(fallback_url, connect_timeout=2, cursor_factory=psycopg2.extras.RealDictCursor)
+                    self.pg_url = fallback_url
+                    return PgConnectionWrapper(conn)
+                except Exception as e2:
+                    logger.warning(f"PostgreSQL connection failed ({e2}), falling back to SQLite: {SQLITE_DB_PATH}")
+                    self.is_pg = False
+                    self._pg_failed = True
         
         conn = sqlite3.connect(str(SQLITE_DB_PATH), check_same_thread=False)
         conn.row_factory = sqlite3.Row
@@ -218,13 +258,10 @@ class DatabaseManager:
     def init_db(self):
         conn = self.get_connection()
         cur = conn.cursor()
-        
         if self.is_pg:
             try:
-                cur.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'aircraft' LIMIT 1;")
-                if cur.fetchone():
-                    conn.close()
-                    return
+                cur.execute("SET lock_timeout = '2s';")
+                cur.execute("SET statement_timeout = '5s';")
             except Exception:
                 pass
 
@@ -301,6 +338,10 @@ class DatabaseManager:
                 first_bearing REAL,
                 last_distance_km REAL,
                 last_bearing REAL,
+                min_distance_km REAL,
+                max_altitude INTEGER,
+                min_altitude INTEGER,
+                max_speed REAL,
                 origin_iata VARCHAR(10),
                 origin_icao VARCHAR(10),
                 destination_iata VARCHAR(10),
@@ -366,26 +407,60 @@ class DatabaseManager:
         except Exception as e:
             logger.debug(f"Table alert_history creation notice: {e}")
 
-        # Indexes for fast querying
-        indexes = [
-            "CREATE INDEX IF NOT EXISTS idx_aircraft_hex ON aircraft(icao_hex);",
-            "CREATE INDEX IF NOT EXISTS idx_aircraft_last_seen ON aircraft(last_seen);",
-            "CREATE INDEX IF NOT EXISTS idx_aircraft_operator ON aircraft(operator);",
-            "CREATE INDEX IF NOT EXISTS idx_aircraft_type ON aircraft(aircraft_type);",
-            "CREATE INDEX IF NOT EXISTS idx_sessions_aircraft ON detection_sessions(aircraft_id);",
-            "CREATE INDEX IF NOT EXISTS idx_sessions_started ON detection_sessions(started_at);",
-            "CREATE INDEX IF NOT EXISTS idx_sessions_ended ON detection_sessions(ended_at);",
-            "CREATE INDEX IF NOT EXISTS idx_sessions_ac_started ON detection_sessions(aircraft_id, started_at DESC);",
-            "CREATE INDEX IF NOT EXISTS idx_obs_session ON observations(session_id);",
-            "CREATE INDEX IF NOT EXISTS idx_obs_aircraft ON observations(aircraft_id);",
-            "CREATE INDEX IF NOT EXISTS idx_obs_timestamp ON observations(timestamp);",
-            "CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alert_history(timestamp);"
-        ]
-        for idx_sql in indexes:
+        # Auto-migration: Ensure columns exist in older tables
+        migration_sqls = []
+        if self.is_pg:
+            migration_sqls = [
+                "ALTER TABLE detection_sessions ADD COLUMN IF NOT EXISTS min_distance_km REAL;",
+                "ALTER TABLE detection_sessions ADD COLUMN IF NOT EXISTS max_altitude INTEGER;",
+                "ALTER TABLE detection_sessions ADD COLUMN IF NOT EXISTS min_altitude INTEGER;",
+                "ALTER TABLE detection_sessions ADD COLUMN IF NOT EXISTS max_speed REAL;",
+                "ALTER TABLE aircraft ADD COLUMN IF NOT EXISTS total_sessions INTEGER DEFAULT 0;",
+                "ALTER TABLE aircraft ADD COLUMN IF NOT EXISTS total_observations INTEGER DEFAULT 0;"
+            ]
+        else:
+            # SQLite safe column check
             try:
-                cur.execute(idx_sql)
+                cur.execute("PRAGMA table_info(detection_sessions);")
+                cols = [row[1] for row in cur.fetchall()]
+                if "min_distance_km" not in cols:
+                    cur.execute("ALTER TABLE detection_sessions ADD COLUMN min_distance_km REAL;")
+                if "max_altitude" not in cols:
+                    cur.execute("ALTER TABLE detection_sessions ADD COLUMN max_altitude INTEGER;")
+                if "min_altitude" not in cols:
+                    cur.execute("ALTER TABLE detection_sessions ADD COLUMN min_altitude INTEGER;")
+                if "max_speed" not in cols:
+                    cur.execute("ALTER TABLE detection_sessions ADD COLUMN max_speed REAL;")
             except Exception:
                 pass
+
+        for m_sql in migration_sqls:
+            try:
+                cur.execute(m_sql)
+            except Exception:
+                pass
+
+        # Indexes for fast querying
+        if not self.is_pg:
+            indexes = [
+                "CREATE INDEX IF NOT EXISTS idx_aircraft_hex ON aircraft(icao_hex);",
+                "CREATE INDEX IF NOT EXISTS idx_aircraft_last_seen ON aircraft(last_seen);",
+                "CREATE INDEX IF NOT EXISTS idx_aircraft_operator ON aircraft(operator);",
+                "CREATE INDEX IF NOT EXISTS idx_aircraft_type ON aircraft(aircraft_type);",
+                "CREATE INDEX IF NOT EXISTS idx_sessions_aircraft ON detection_sessions(aircraft_id);",
+                "CREATE INDEX IF NOT EXISTS idx_sessions_started ON detection_sessions(started_at);",
+                "CREATE INDEX IF NOT EXISTS idx_sessions_ended ON detection_sessions(ended_at);",
+                "CREATE INDEX IF NOT EXISTS idx_sessions_ac_started ON detection_sessions(aircraft_id, started_at DESC);",
+                "CREATE INDEX IF NOT EXISTS idx_obs_session ON observations(session_id);",
+                "CREATE INDEX IF NOT EXISTS idx_obs_aircraft ON observations(aircraft_id);",
+                "CREATE INDEX IF NOT EXISTS idx_obs_timestamp ON observations(timestamp);",
+                "CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alert_history(timestamp);"
+            ]
+            for idx_sql in indexes:
+                try:
+                    cur.execute(idx_sql)
+                except Exception:
+                    pass
 
         try:
             conn.commit()
@@ -401,9 +476,15 @@ class DatabaseManager:
         cur = conn.cursor()
 
         # Check if already migrated
-        cur.execute("SELECT COUNT(*) FROM aircraft;")
-        count = cur.fetchone()
-        row_count = count[0] if isinstance(count, (tuple, list)) else count['count'] if isinstance(count, dict) else count[0]
+        try:
+            cur.execute("SELECT COUNT(*) FROM aircraft;")
+            count = cur.fetchone()
+            row_count = count[0] if isinstance(count, (tuple, list)) else (count['count'] if isinstance(count, dict) else count[0])
+            if row_count > 0:
+                conn.close()
+                return
+        except Exception:
+            pass
         
         # 1. Migrate aircraft.db if exists
         if OLD_AIRCRAFT_DB.exists():
@@ -551,4 +632,288 @@ class DatabaseManager:
         conn.close()
         logger.info("Database relational migration complete.")
 
+    def upsert_aircraft(self, hex_code: str, callsign: str = None, reg: str = None, ac_type: str = None) -> int:
+        now_dt = datetime.now(timezone.utc)
+        now_val = now_dt if self.is_pg else now_dt.isoformat()
+        ph = self.ph
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            if self.is_pg:
+                cur.execute(f"""
+                    INSERT INTO aircraft (icao_hex, callsign, registration, aircraft_type, first_seen, last_seen, total_sessions, total_observations, created_at, updated_at)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 1, 1, {ph}, {ph})
+                    ON CONFLICT (icao_hex) DO UPDATE SET
+                        callsign = COALESCE(NULLIF(EXCLUDED.callsign, ''), aircraft.callsign),
+                        registration = COALESCE(NULLIF(EXCLUDED.registration, ''), aircraft.registration),
+                        aircraft_type = COALESCE(NULLIF(EXCLUDED.aircraft_type, ''), aircraft.aircraft_type),
+                        last_seen = EXCLUDED.last_seen,
+                        total_observations = aircraft.total_observations + 1,
+                        updated_at = EXCLUDED.updated_at
+                    RETURNING id;
+                """, (hex_code, callsign, reg, ac_type, now_val, now_val, now_val, now_val))
+                row = cur.fetchone()
+                ac_id = row["id"] if isinstance(row, dict) else row[0]
+            else:
+                cur.execute("SELECT id FROM aircraft WHERE icao_hex = ?", (hex_code,))
+                row = cur.fetchone()
+                if row:
+                    ac_id = row[0] if isinstance(row, (tuple, list)) else row["id"]
+                    cur.execute("""
+                        UPDATE aircraft SET
+                            callsign = COALESCE(NULLIF(?, ''), callsign),
+                            registration = COALESCE(NULLIF(?, ''), registration),
+                            aircraft_type = COALESCE(NULLIF(?, ''), aircraft_type),
+                            last_seen = ?,
+                            total_observations = total_observations + 1,
+                            updated_at = ?
+                        WHERE id = ?
+                    """, (callsign, reg, ac_type, now_val, now_val, ac_id))
+                else:
+                    cur.execute("""
+                        INSERT INTO aircraft (icao_hex, callsign, registration, aircraft_type, first_seen, last_seen, total_sessions, total_observations, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
+                    """, (hex_code, callsign, reg, ac_type, now_val, now_val, now_val, now_val))
+                    ac_id = cur.lastrowid
+            conn.commit()
+            return ac_id
+        finally:
+            conn.close()
+
+    def get_active_session(self, ac_id: int) -> Optional[int]:
+        ph = self.ph
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"""
+                SELECT id FROM detection_sessions 
+                WHERE aircraft_id = {ph} AND ended_at IS NULL 
+                ORDER BY id DESC LIMIT 1
+            """, (ac_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            return row["id"] if isinstance(row, dict) else row[0]
+        finally:
+            conn.close()
+
+    def start_session(self, ac_id: int, dist_km: Optional[float] = None, bearing: Optional[float] = None) -> int:
+        now_dt = datetime.now(timezone.utc)
+        now_val = now_dt if self.is_pg else now_dt.isoformat()
+        ph = self.ph
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            if self.is_pg:
+                cur.execute(f"""
+                    INSERT INTO detection_sessions (
+                        aircraft_id, started_at, last_observed_at, ended_at,
+                        observation_count, first_distance_km, first_bearing, last_distance_km, last_bearing, min_distance_km
+                    ) VALUES ({ph}, {ph}, {ph}, NULL, 1, {ph}, {ph}, {ph}, {ph}, {ph})
+                    RETURNING id;
+                """, (ac_id, now_val, now_val, dist_km, bearing, dist_km, bearing, dist_km))
+                row = cur.fetchone()
+                session_id = row["id"] if isinstance(row, dict) else row[0]
+            else:
+                cur.execute("""
+                    INSERT INTO detection_sessions (
+                        aircraft_id, started_at, last_observed_at, ended_at,
+                        observation_count, first_distance_km, first_bearing, last_distance_km, last_bearing, min_distance_km
+                    ) VALUES (?, ?, ?, NULL, 1, ?, ?, ?, ?, ?)
+                """, (ac_id, now_val, now_val, dist_km, bearing, dist_km, bearing, dist_km))
+                session_id = cur.lastrowid
+            
+            # Increment total_sessions on aircraft
+            cur.execute(f"UPDATE aircraft SET total_sessions = total_sessions + 1, last_seen = {ph} WHERE id = {ph}", (now_val, ac_id))
+            conn.commit()
+            return session_id
+        finally:
+            conn.close()
+
+    def update_session(self, session_id: int, dist_km: Optional[float] = None, bearing: Optional[float] = None):
+        now_dt = datetime.now(timezone.utc)
+        now_val = now_dt if self.is_pg else now_dt.isoformat()
+        ph = self.ph
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"""
+                UPDATE detection_sessions SET
+                    last_observed_at = {ph},
+                    observation_count = observation_count + 1,
+                    last_distance_km = COALESCE({ph}, last_distance_km),
+                    last_bearing = COALESCE({ph}, last_bearing),
+                    min_distance_km = CASE 
+                        WHEN {ph} IS NOT NULL AND (min_distance_km IS NULL OR {ph} < min_distance_km) THEN {ph}
+                        ELSE min_distance_km 
+                    END
+                WHERE id = {ph}
+            """, (now_val, dist_km, bearing, dist_km, dist_km, dist_km, session_id))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def close_session(self, session_id: int):
+        ph = self.ph
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"""
+                UPDATE detection_sessions 
+                SET ended_at = last_observed_at 
+                WHERE id = {ph}
+            """, (session_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def insert_observation(self, ac_id: int, session_id: int, plane: Dict[str, Any], dist_km: Optional[float] = None, bearing: Optional[float] = None):
+        now_dt = datetime.now(timezone.utc)
+        now_val = now_dt if self.is_pg else now_dt.isoformat()
+        ph = self.ph
+        conn = self.get_connection()
+
+        def _safe_int(v):
+            if v is None or v == "ground" or v == "None": return None
+            try: return int(v)
+            except Exception: return None
+
+        def _safe_float(v):
+            if v is None or v == "ground" or v == "None": return None
+            try: return float(v)
+            except Exception: return None
+
+        alt = _safe_int(plane.get("alt_baro") or plane.get("alt_geom"))
+        gs = _safe_float(plane.get("gs"))
+        track = _safe_float(plane.get("track"))
+        lat = _safe_float(plane.get("lat"))
+        lon = _safe_float(plane.get("lon"))
+        vert = _safe_int(plane.get("baro_rate") or plane.get("geom_rate"))
+        squawk = str(plane.get("squawk") or "")
+
+        try:
+            cur = conn.cursor()
+            cur.execute(f"""
+                INSERT INTO observations (
+                    aircraft_id, session_id, timestamp, altitude,
+                    ground_speed, track, latitude, longitude, vertical_rate, squawk,
+                    distance_km, bearing, created_at
+                ) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+            """, (
+                ac_id, session_id, now_val,
+                alt, gs, track,
+                lat, lon, vert, squawk,
+                dist_km, bearing, now_val
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def update_session_route(self, session_id: int, route_data: Dict[str, Any]):
+        ph = self.ph
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"""
+                UPDATE detection_sessions SET
+                    origin_iata = {ph}, origin_icao = {ph},
+                    destination_iata = {ph}, destination_icao = {ph}
+                WHERE id = {ph}
+            """, (
+                route_data.get("origin_iata"), route_data.get("origin_icao"),
+                route_data.get("destination_iata"), route_data.get("destination_icao"),
+                session_id
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def upsert_enrichment(self, ac_id: int, enrich_data: Dict[str, Any]):
+        now_dt = datetime.now(timezone.utc)
+        now_val = now_dt if self.is_pg else now_dt.isoformat()
+        ph = self.ph
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            if self.is_pg:
+                cur.execute(f"""
+                    INSERT INTO aircraft_enrichment (
+                        aircraft_id, registration, aircraft_type, manufacturer, model,
+                        operator_name, operator_icao, operator_iata, country, source, source_url,
+                        manufacturer_icao, operator_callsign, owner, serial_number, type_code,
+                        icao_aircraft_type, built, first_flight_date, category, created_at, updated_at
+                    ) VALUES (
+                        {ph}, {ph}, {ph}, {ph}, {ph},
+                        {ph}, {ph}, {ph}, {ph}, {ph}, {ph},
+                        {ph}, {ph}, {ph}, {ph}, {ph},
+                        {ph}, {ph}, {ph}, {ph}, {ph}, {ph}
+                    )
+                    ON CONFLICT (aircraft_id) DO UPDATE SET
+                        registration = COALESCE(NULLIF(EXCLUDED.registration, ''), aircraft_enrichment.registration),
+                        aircraft_type = COALESCE(NULLIF(EXCLUDED.aircraft_type, ''), aircraft_enrichment.aircraft_type),
+                        manufacturer = COALESCE(NULLIF(EXCLUDED.manufacturer, ''), aircraft_enrichment.manufacturer),
+                        model = COALESCE(NULLIF(EXCLUDED.model, ''), aircraft_enrichment.model),
+                        operator_name = COALESCE(NULLIF(EXCLUDED.operator_name, ''), aircraft_enrichment.operator_name),
+                        operator_icao = COALESCE(NULLIF(EXCLUDED.operator_icao, ''), aircraft_enrichment.operator_icao),
+                        operator_iata = COALESCE(NULLIF(EXCLUDED.operator_iata, ''), aircraft_enrichment.operator_iata),
+                        country = COALESCE(NULLIF(EXCLUDED.country, ''), aircraft_enrichment.country),
+                        source = COALESCE(NULLIF(EXCLUDED.source, ''), aircraft_enrichment.source),
+                        source_url = COALESCE(NULLIF(EXCLUDED.source_url, ''), aircraft_enrichment.source_url),
+                        owner = COALESCE(NULLIF(EXCLUDED.owner, ''), aircraft_enrichment.owner),
+                        serial_number = COALESCE(NULLIF(EXCLUDED.serial_number, ''), aircraft_enrichment.serial_number),
+                        updated_at = EXCLUDED.updated_at;
+                """, (
+                    ac_id,
+                    enrich_data.get("registration"), enrich_data.get("aircraft_type"), enrich_data.get("manufacturer"), enrich_data.get("model"),
+                    enrich_data.get("operator_name"), enrich_data.get("operator_icao"), enrich_data.get("operator_iata"), enrich_data.get("country"),
+                    enrich_data.get("source"), enrich_data.get("source_url"), enrich_data.get("manufacturer_icao"), enrich_data.get("operator_callsign"),
+                    enrich_data.get("owner"), enrich_data.get("serial_number"), enrich_data.get("type_code"), enrich_data.get("icao_aircraft_type"),
+                    str(enrich_data.get("built") or ""), str(enrich_data.get("first_flight_date") or "") if not self.is_pg else None, enrich_data.get("category"),
+                    now_val, now_val
+                ))
+            else:
+                cur.execute("SELECT id FROM aircraft_enrichment WHERE aircraft_id = ?", (ac_id,))
+                if cur.fetchone():
+                    cur.execute("""
+                        UPDATE aircraft_enrichment SET
+                            registration = COALESCE(NULLIF(?, ''), registration),
+                            aircraft_type = COALESCE(NULLIF(?, ''), aircraft_type),
+                            manufacturer = COALESCE(NULLIF(?, ''), manufacturer),
+                            model = COALESCE(NULLIF(?, ''), model),
+                            operator_name = COALESCE(NULLIF(?, ''), operator_name),
+                            operator_icao = COALESCE(NULLIF(?, ''), operator_icao),
+                            operator_iata = COALESCE(NULLIF(?, ''), operator_iata),
+                            country = COALESCE(NULLIF(?, ''), country),
+                            source = COALESCE(NULLIF(?, ''), source),
+                            source_url = COALESCE(NULLIF(?, ''), source_url),
+                            owner = COALESCE(NULLIF(?, ''), owner),
+                            serial_number = COALESCE(NULLIF(?, ''), serial_number),
+                            updated_at = ?
+                        WHERE aircraft_id = ?
+                    """, (
+                        enrich_data.get("registration"), enrich_data.get("aircraft_type"), enrich_data.get("manufacturer"), enrich_data.get("model"),
+                        enrich_data.get("operator_name"), enrich_data.get("operator_icao"), enrich_data.get("operator_iata"), enrich_data.get("country"),
+                        enrich_data.get("source"), enrich_data.get("source_url"), enrich_data.get("owner"), enrich_data.get("serial_number"),
+                        now_val, ac_id
+                    ))
+                else:
+                    cur.execute("""
+                        INSERT INTO aircraft_enrichment (
+                            aircraft_id, registration, aircraft_type, manufacturer, model,
+                            operator_name, operator_icao, operator_iata, country, source, source_url,
+                            owner, serial_number, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        ac_id,
+                        enrich_data.get("registration"), enrich_data.get("aircraft_type"), enrich_data.get("manufacturer"), enrich_data.get("model"),
+                        enrich_data.get("operator_name"), enrich_data.get("operator_icao"), enrich_data.get("operator_iata"), enrich_data.get("country"),
+                        enrich_data.get("source"), enrich_data.get("source_url"), enrich_data.get("owner"), enrich_data.get("serial_number"),
+                        now_val, now_val
+                    ))
+            conn.commit()
+        finally:
+            conn.close()
+
+
 db_manager = DatabaseManager()
+

@@ -164,10 +164,11 @@ class UnifiedCollector:
         # Send Telegram startup announcement if configured
         if self.telegram and self.telegram.token and self.telegram.chat_id:
             try:
-                self.telegram.send(
+                msg = (
                     "<b>🛫 SkyAlert Station Started</b>\n\n"
                     "<i>Collector engine online · Live airspace monitoring active.</i>"
                 )
+                asyncio.create_task(asyncio.to_thread(self.telegram.send, msg))
             except Exception as e:
                 logger.debug(f"Telegram start notification notice: {e}")
 
@@ -178,19 +179,23 @@ class UnifiedCollector:
                 logger.info("Collector received cancellation signal.")
                 break
             except Exception as e:
-                logger.error(f"Error in collector poll cycle: {e}", exc_info=True)
+                logger.error(f"Error in collector poll cycle: {e}")
 
             await asyncio.sleep(self.poll_interval)
 
     async def poll_cycle(self):
         """Single polling cycle."""
-        resp = await self.client.get(self.url)
-        if resp.status_code != 200:
-            logger.warning(f"Receiver HTTP error ({resp.status_code}) from {self.url}")
+        try:
+            resp = await self.client.get(self.url)
+            if resp.status_code != 200:
+                logger.warning(f"Receiver HTTP error ({resp.status_code}) from {self.url}")
+                return
+            data = resp.json()
+            aircraft_list = data.get("aircraft", [])
+        except Exception as e:
+            logger.debug(f"Receiver connection notice ({self.url}): {e}")
             return
 
-        data = resp.json()
-        aircraft_list = data.get("aircraft", [])
         now_dt = datetime.now(timezone.utc)
 
         for plane in aircraft_list:
@@ -292,12 +297,22 @@ class UnifiedCollector:
                     logger.error(f"Error dispatching alert {rule_key} for {hex_code}: {e}")
 
     def start_session_in_db(self, ac_id: int, now_dt: datetime, dist_km: Optional[float], bearing: Optional[float]) -> int:
-        """Inserts a new session record into detection_sessions."""
+        """Inserts a new session record into detection_sessions, or reuses active unclosed session."""
         conn = db_manager.get_connection()
         ph = db_manager.ph
         now_val = now_dt if db_manager.is_pg else now_dt.isoformat()
         try:
             cur = conn.cursor()
+            # 1. Check if an active session already exists in DB
+            cur.execute(f"SELECT id FROM detection_sessions WHERE aircraft_id = {ph} AND ended_at IS NULL ORDER BY id DESC LIMIT 1", (ac_id,))
+            existing = cur.fetchone()
+            if existing:
+                sess_id = existing["id"] if isinstance(existing, dict) else existing[0]
+                cur.execute(f"UPDATE detection_sessions SET last_observed_at = {ph} WHERE id = {ph}", (now_val, sess_id))
+                conn.commit()
+                return sess_id
+
+            # 2. Insert new session
             if db_manager.is_pg:
                 cur.execute(f"""
                     INSERT INTO detection_sessions (aircraft_id, started_at, last_observed_at, observation_count, first_distance_km, first_bearing, last_distance_km, last_bearing, min_distance_km)

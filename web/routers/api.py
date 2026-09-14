@@ -154,9 +154,8 @@ async def get_live():
             # Check pre-fetched active routes or cache
             item["route"] = active_routes.get(hex_code)
 
-            alt = item.get("altitude_ft") or item.get("alt_baro")
-            spd = item.get("speed_kts") or item.get("gs")
-            rate = item.get("baro_rate")
+            enriched_planes.append(item)
+
         # Attach cached ADSBDB routes or dispatch background enrichment
         for item in enriched_planes:
             if not item.get("route"):

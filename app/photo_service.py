@@ -92,7 +92,7 @@ class AircraftPhotoService:
         for url in urls:
             try:
                 req = urllib.request.Request(url, headers={
-                    "User-Agent": "SkyAlert/3.0 (https://github.com/navingour/SkyAlert-Full; contact@skyalert.local)",
+                    "User-Agent": "SkyAlert/3.0 (https://github.com/navingour/SkyAlert; contact@skyalert.local)",
                     "Accept": "application/json"
                 })
                 with urllib.request.urlopen(req, timeout=3) as resp:

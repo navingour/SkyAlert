@@ -93,8 +93,8 @@ Everything runs on your own hardware, on your own network. No subscriptions. No 
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/navingour/SkyAlert-Full.git
-cd SkyAlert-Full
+git clone https://github.com/navingour/SkyAlert.git
+cd SkyAlert
 ```
 
 ### 2. Create Virtual Environment & Install Dependencies
@@ -293,7 +293,7 @@ python3 scripts/migrate_database.py \
 ## 📁 Repository Structure
 
 ```
-SkyAlert-Full/
+SkyAlert/
 ├── app/
 │   ├── collector/              # Unified async ADS-B poller & session manager
 │   ├── aircraft_enricher.py   # Offline-first CSV lookup & metadata enricher

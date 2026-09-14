@@ -239,6 +239,6 @@ SkyAlert-Full/
 
 ---
 
-## 📄 License
-
-Distributed under the **MIT License**. Free for personal, academic, and open-source use.
+<div align="center">
+<sub>SkyAlert is open-source software released under the <a href="LICENSE">MIT License</a>.</sub>
+</div>

@@ -220,10 +220,12 @@ async def get_live():
             elif isinstance(r_obj, str) and r_obj.strip():
                 item["route_short"] = r_obj.strip()
 
-        # Clean up temp fields
+        # Clean up temp fields and attach per-plane anomalies
         for item in enriched_planes:
             item.pop("_hex", None)
             item.pop("_callsign", None)
+            # Run anomaly detection on each live plane and attach results
+            item["anomalies"] = analytics_service.detect_telemetry_anomalies(item)
 
         formations = analytics_service.detect_proximity_and_formations(enriched_planes)
 

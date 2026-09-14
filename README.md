@@ -1,195 +1,244 @@
-# SkyAlert — Station Control & Intelligence Platform
+<div align="center">
 
-> A self-hosted, real-time ADS-B aircraft intelligence platform. Tracks, enriches, and visualises every aircraft that enters your receiver's range — with Telegram alerts, a live radar dashboard, fleet analytics, and a full historical database.
+# ✈️ SkyAlert
 
----
+### Self-Hosted ADS-B Tactical Aviation Intelligence & Fixed Station Platform
 
-## ✨ Features
+[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Database](https://img.shields.io/badge/Database-SQLite%20%7C%20PostgreSQL-336791?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![ADS-B Ready](https://img.shields.io/badge/ADS--B-Feed%20Ready-FF6B00?style=for-the-badge&logo=radar&logoColor=white)](#-receiver-compatibility)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-- **Live Airspace** — Real-time aircraft cards with speed, altitude, route & operator
-- **Radar Map** — Live Leaflet.js radar map with aircraft markers
-- **Emergency Squawk Detection** — Cards light up red for 7500/7600/7700 + Telegram alert
-- **Aircraft Database** — Full enriched profile (registration, operator, manufacturer, history)
-- **Detection Sessions** — Every visit logged with telemetry (altitude, speed, distance, bearing)
-- **Operators & Types** — Analytics cards for every airline & aircraft type seen
-- **Fleet Analytics** — Operator fleet intelligence
-- **Global Analytics** — 24-hour traffic chart, top operators, top types
-- **Weather Analytics** — Upper-air OAT/TAT thermal profiles from live aircraft data
-- **Receiver Analytics** — Signal horizon map, RSSI vs distance curve
-- **Formation Detection** — Detects aircraft flying in proximity
-- **Rare Aircraft** — Flags aircraft seen fewer than N times
-- **Alert History** — Full log of every triggered alert
-- **Telegram Notifications** — Startup message, source health, emergency alerts
+<p align="center">
+  <b>Transform any ADS-B receiver into an enterprise-grade tactical air intelligence center.</b><br>
+  Real-time tracking • Proximity geofencing • Instant Telegram photo alerts • Rare airframe radar • Zero-bloat database.
+</p>
+
+</div>
 
 ---
 
-## 🖥️ Requirements
+## 🌟 Key Highlights
 
-- Python **3.9+**
-- A running **ADS-B receiver** with [tar1090](https://github.com/wiedehopf/tar1090) (or compatible `aircraft.json` feed)
-- Linux (Debian/Ubuntu recommended) or macOS
+- **⚡ Zero-Config Unified Architecture**: Start the entire platform (Web Dashboard + ADS-B Collector) with a single command (`python3 main.py` or `./start.sh`).
+- **🛰️ Live Airspace & Tactical Radar**: High-refresh live cards, Leaflet.js radar map, closest point of approach (CPA), Mach, true airspeed (TAS), and vertical climb/descent vectors.
+- **💬 Interactive Telegram Automation Hub**: Configure bot tokens directly in the UI, verify connection with live `getMe` API checks, send rich aircraft photo alert cards, and monitor custom aircraft targets with vicinity distance radius triggers.
+- **🚁 Rare Aircraft & Helicopter Intelligence**: Dedicated classification radar for helicopters (Bell, Eurocopter, AW139, Mi-17, HAL), military tactical transports/fighters, heavy airframes (A380, B747, C-17, Beluga), and one-time visitors.
+- **📉 Smart Telemetry Sampling**: Preserves 100% of flight visits, CPA distance, and bearings while throttling raw observation pings to 30-second trajectory intervals — **slashing database storage by 95%+**.
+- **🔍 Offline-First Auto-Enrichment**: Bundled with a 625,000+ aircraft database (`data/reference/aircraft.csv`) for instant offline lookup of tail numbers, models, and registered operators.
+- **🔄 Dual Relational Database Engine**: Native auto-bootstrapping SQLite WAL engine for standalone use, with seamless enterprise PostgreSQL support via `DATABASE_URL`.
+- **🧰 Standalone Migration Tool**: Built-in CLI tool (`scripts/migrate_database.py`) to effortlessly migrate legacy databases into the unified relational schema.
 
 ---
 
-## 🚀 Quick Start (Fresh Install)
+## 📸 Platform Capabilities
 
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        SKYALERT MASTER PLATFORM                        │
+├────────────────────────────────────────────────────────────────────────┤
+│  [🛰️ Live Airspace]   [🗺️ Radar Map]   [🚁 Rare Aircraft]   [💬 Telegram] │
+│                                                                        │
+│  • Tactical Live Cards with Flight, Reg, Type, Alt, GS, CPA & Bearing  │
+│  • Squawk 7700 / 7600 / 7500 Emergency Alert Matrix                    │
+│  • Vicinity Proximity Geofencing (< 25km, 50km, 100km radius alerts)   │
+│  • Upper-Air Weather Analytics (OAT / TAT thermal profiles)            │
+│  • Signal Horizon & RSSI Reception Polar Coverage                      │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🚀 Quick Start (Native Install)
+
+### 1. Clone & Setup
 ```bash
-# 1. Clone the repository
-git clone https://github.com/YOUR_USERNAME/SkyAlert-Full.git
+git clone https://github.com/navingour/SkyAlert-Full.git
 cd SkyAlert-Full
+```
 
-# 2. Create virtual environment
+### 2. Create Virtual Environment & Install Dependencies
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
-
-# 3. Install dependencies
 pip install -r requirements.txt
+```
 
-# 4. Create your config from the template
-cp config/config.example.yaml config/config.yaml
-nano config/config.yaml        # Set your receiver URL, Telegram token, etc.
-
-# 5. Create required directories
-mkdir -p data logs
-
-# 6. Start SkyAlert
-chmod +x start.sh
+### 3. Launch SkyAlert
+```bash
+chmod +x start.sh stop.sh
 ./start.sh
 ```
 
-Open your browser at: **http://localhost:8080**
+> **Note:** If `config/config.yaml` is not present, SkyAlert will automatically bootstrap one from `config/config.example.yaml` on first launch!
+
+Open your browser at **`http://localhost:8080`** (or `http://YOUR_SERVER_IP:8080`).
 
 ---
 
-## 🔄 Upgrading an Existing Installation (Existing Database)
+## ⚙️ Configuration Guide
 
-> **Important:** SkyAlert is designed to be fully backwards-compatible with existing databases.
-> All schema changes use `CREATE TABLE IF NOT EXISTS` and `ALTER TABLE ... ADD COLUMN` wrapped in try/except — **your existing data will never be deleted or altered.**
+All settings are managed via `config/config.yaml` or directly inside the **Web Settings / Telegram UI**.
+
+```yaml
+# config/config.yaml
+
+general:
+  poll_interval: 5               # Receiver polling rate in seconds
+
+# Receiver feed endpoint (tar1090 / readsb / dump1090-fa)
+tar1090:
+  url: "http://192.168.0.132/tar1090/data/aircraft.json"
+
+# Station reference coordinates (for distance, bearing, and proximity alerts)
+station:
+  latitude: 22.5726
+  longitude: 88.3639
+  name: "Primary Ground Station"
+
+# Smart sampling (prevents database bloat)
+collector:
+  session_timeout_minutes: 10
+  telemetry:
+    enabled: true
+    sample_interval_sec: 30     # Trajectory breadcrumb interval
+
+# Telegram Alerting
+telegram:
+  enabled: true
+  bot_token: "YOUR_TELEGRAM_BOT_TOKEN"
+  chat_id: "YOUR_TELEGRAM_CHAT_ID"
+  photo_enabled: true
+
+# Alert scenarios
+alerts:
+  squawk: true                  # Emergency 7700, 7600, 7500
+  military: true                # Military airframes & callsigns
+  helicopters: true             # Rotorcraft & helicopters
+  rare_aircraft: true           # A380, B747, C-17, low-visit passes
+  watchlist: true               # Tracked aircraft in station vicinity
+```
+
+### Database Options:
+- **SQLite (Default / Zero-Config)**: Leave `DATABASE_URL` empty or use `sqlite:///data/skyalert_relational.db`.
+- **PostgreSQL**: Set `DATABASE_URL` in `.env` or in `config.yaml`:
+  ```bash
+  DATABASE_URL=postgresql://user:password@localhost:5432/skyalert
+  ```
+
+---
+
+## 📡 Receiver Compatibility
+
+SkyAlert seamlessly ingests data from any ADS-B receiver stack outputting standard JSON:
+
+| Receiver Stack | Default Feed Endpoint |
+|---|---|
+| **tar1090** | `http://<ip>/tar1090/data/aircraft.json` |
+| **readsb** | `http://<ip>/readsb/data/aircraft.json` or `/run/readsb/aircraft.json` |
+| **dump1090-fa (PiAware)** | `http://<ip>/dump1090-fa/data/aircraft.json` |
+| **Ultrafeeder (sdr-enthusiasts)** | `http://<ip>:8080/data/aircraft.json` |
+| **Flightradar24 / RadarBox** | Any local or network `aircraft.json` endpoint |
+
+---
+
+## 💬 Telegram Proximity & Threat Alerts
+
+SkyAlert includes an in-app Telegram Hub:
+1. **Live Token Verification**: Test bot tokens against the Telegram API directly from the Web UI.
+2. **Rich Photo Alert Cards**: Messages include registration, operator, altitude, ground speed, distance from station, squawk code, and aircraft photo attachments.
+3. **Custom Target Tracking with Geofence Radius**: Track specific operators, callsign prefixes (e.g. `IAF`, `RCH`), registrations, or ICAO hex codes only when they enter a specific distance (e.g., `< 50 km`) from your station.
+
+---
+
+## 🧰 Database Migration Utility
+
+If you have legacy database files (`aircraft.db` or `skyalert.db`) from earlier tools, migrate them with zero data loss using the standalone CLI:
 
 ```bash
-# 1. Go to your SkyAlert directory
-cd /path/to/SkyAlert-Full
+# Migrate to local SQLite database:
+python3 scripts/migrate_database.py --source "data/legacy_aircraft.db" --target "sqlite:///data/skyalert_relational.db"
 
-# 2. Pull the latest code
-git pull origin main
-
-# 3. Activate your virtual environment
-source .venv/bin/activate
-
-# 4. Install any new dependencies
-pip install -r requirements.txt
-
-# 5. DO NOT touch the data/ directory — your database stays exactly as-is.
-
-# 6. Restart the app
-./start.sh
-```
-
-The app will automatically detect your existing `data/skyalert_relational.db` and `data/aircraft.db` and continue using them without any modification.
-
----
-
-## 📁 Project Structure
-
-```
-SkyAlert-Full/
-├── app/                    # Core backend logic
-│   ├── backend/            # ADS-B poller / collector
-│   ├── core/               # Async engine
-│   ├── aircraft_enricher.py
-│   ├── db_manager.py       # Unified database manager
-│   ├── event_database.py   # Alert history database
-│   ├── notifier.py         # Telegram notification builder
-│   ├── rules.py            # Alert rule engine
-│   ├── session_tracker.py  # Detection session tracker
-│   └── telegram.py         # Telegram sender
-├── config/
-│   ├── config.example.yaml # ← Copy this to config.yaml
-│   └── config.yaml         # ← Your local config (git-ignored)
-├── data/                   # Database files (git-ignored)
-│   └── skyalert_relational.db
-├── logs/                   # Log files (git-ignored)
-├── web/                    # FastAPI web dashboard
-│   ├── routers/            # API endpoints
-│   ├── static/             # CSS, JS, images
-│   └── templates/          # Jinja2 HTML templates
-├── requirements.txt
-├── start.sh                # ← Run this to start everything
-└── start-web.sh            # Web-only start (for development)
+# Or migrate to PostgreSQL:
+python3 scripts/migrate_database.py --source "data/legacy_aircraft.db" --target "postgresql://user:pass@localhost:5432/skyalert"
 ```
 
 ---
 
-## ⚙️ Configuration
+## 🐧 Running as a Systemd Service (Linux / Raspberry Pi)
 
-All configuration lives in `config/config.yaml` (excluded from git). See [`config/config.example.yaml`](config/config.example.yaml) for the full reference with documentation for every option.
-
-**Key settings:**
-
-| Key | Description |
-|-----|-------------|
-| `tar1090.url` | Your ADS-B receiver's `aircraft.json` URL |
-| `telegram.enabled` | Enable/disable Telegram alerts |
-| `telegram.bot_token` | Your Telegram bot token |
-| `telegram.chat_id` | Your Telegram chat ID |
-| `alerts.squawk` | Enable emergency squawk alerts (7500/7600/7700) |
-
----
-
-## 🐧 Running as a Systemd Service (Debian/Ubuntu)
-
-To run SkyAlert automatically on boot:
+To keep SkyAlert running 24/7 and automatically start on boot:
 
 ```bash
 sudo nano /etc/systemd/system/skyalert.service
 ```
 
-Paste:
+Paste the configuration (replace `/path/to/SkyAlert-Full` and `YOUR_USERNAME`):
 
 ```ini
 [Unit]
-Description=SkyAlert Station Control
+Description=SkyAlert Tactical Aviation Intelligence Platform
 After=network.target
 
 [Service]
 Type=simple
 User=YOUR_USERNAME
 WorkingDirectory=/path/to/SkyAlert-Full
-ExecStart=/path/to/SkyAlert-Full/.venv/bin/python3 -m app.backend.main
-Restart=on-failure
+ExecStart=/path/to/SkyAlert-Full/.venv/bin/python3 /path/to/SkyAlert-Full/main.py
+Restart=always
 RestartSec=5
+Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-For the **web dashboard** as a separate service:
-
-```ini
-[Unit]
-Description=SkyAlert Web Dashboard
-After=network.target skyalert.service
-
-[Service]
-Type=simple
-User=YOUR_USERNAME
-WorkingDirectory=/path/to/SkyAlert-Full
-ExecStart=/path/to/SkyAlert-Full/.venv/bin/uvicorn web.main:app --host 0.0.0.0 --port 8080
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
+Enable and start the service:
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable skyalert skyalert-web
-sudo systemctl start skyalert skyalert-web
+sudo systemctl enable --now skyalert
+```
+
+View live logs:
+```bash
+journalctl -u skyalert -f
+```
+
+---
+
+## 📁 Repository Structure
+
+```
+SkyAlert-Full/
+├── app/
+│   ├── collector/              # Unified ADS-B async poller & session manager
+│   ├── aircraft_enricher.py    # Offline-first CSV lookup & metadata enricher
+│   ├── analytics_service.py    # Multi-timeframe SQL KPIs & chart aggregation
+│   ├── db_manager.py           # Universal PostgreSQL / SQLite relational manager
+│   ├── notifier.py             # HTML alert card builder
+│   ├── rules.py                # Alert rule engine & vicinity target evaluator
+│   └── telegram.py             # Asynchronous Telegram notification client
+├── config/
+│   ├── config.example.yaml     # Master configuration blueprint
+│   └── config.yaml             # User configuration (git-ignored)
+├── data/
+│   ├── reference/              # Local 625,000+ airframe CSV database
+│   └── skyalert_relational.db  # Zero-config SQLite database (git-ignored)
+├── scripts/
+│   └── migrate_database.py     # Standalone database migration CLI
+├── web/
+│   ├── routers/                # FastAPI API, Dashboard, WebSocket & Settings routers
+│   ├── static/                 # CSS styling, Leaflet maps, and JS engine
+│   └── templates/              # Modern responsive HTML dashboard templates
+├── main.py                     # Master application entry point
+├── requirements.txt            # Python dependencies
+├── start.sh                    # One-click start script
+└── stop.sh                     # Graceful stop script
 ```
 
 ---
 
 ## 📄 License
 
-MIT
+Distributed under the **MIT License**. Free for personal, academic, and open-source use.

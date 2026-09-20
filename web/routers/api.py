@@ -1774,8 +1774,252 @@ async def save_telegram_config(request: Request):
             for k, v in body["thresholds"].items():
                 cfg["thresholds"][k] = v
 
+        if "providers" in body:
+            if "providers" not in cfg:
+                cfg["providers"] = {}
+            for prov_name, prov_val in body["providers"].items():
+                if prov_name not in cfg["providers"]:
+                    cfg["providers"][prov_name] = {}
+                if isinstance(prov_val, dict):
+                    for pk, pv in prov_val.items():
+                        cfg["providers"][prov_name][pk] = pv
+
         config_manager.save(cfg)
         return JSONResponse({"status": "success", "message": "Telegram and alerting configuration saved successfully."})
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
+# =========================================================
+# PROVIDERS & API INTEGRATION ENDPOINTS
+# =========================================================
+
+@router.get("/providers/config")
+async def get_providers_config():
+    """Returns external data providers configuration."""
+    try:
+        from web.services.config_manager import config_manager
+        cfg = config_manager.load()
+        prov = cfg.get("providers", {})
+
+        return JSONResponse({
+            "status": "success",
+            "providers": {
+                "airlabs": {
+                    "enabled": prov.get("airlabs", {}).get("enabled", True),
+                    "api_key": prov.get("airlabs", {}).get("api_key", ""),
+                    "configured": bool(prov.get("airlabs", {}).get("api_key")),
+                    "is_free": False
+                },
+                "hexdb": {
+                    "enabled": prov.get("hexdb", {}).get("enabled", True),
+                    "api_key": "",
+                    "configured": True,
+                    "is_free": True
+                },
+                "airframes": {
+                    "enabled": prov.get("airframes", {}).get("enabled", True),
+                    "api_key": prov.get("airframes", {}).get("api_key", ""),
+                    "configured": bool(prov.get("airframes", {}).get("api_key")),
+                    "is_free": False
+                },
+                "api_ninjas": {
+                    "enabled": prov.get("api_ninjas", {}).get("enabled", True),
+                    "api_key": prov.get("api_ninjas", {}).get("api_key", ""),
+                    "configured": bool(prov.get("api_ninjas", {}).get("api_key")),
+                    "is_free": False
+                },
+                "adsbdb": {
+                    "enabled": prov.get("adsbdb", {}).get("enabled", True),
+                    "api_key": "",
+                    "configured": True,
+                    "is_free": True
+                },
+                "skylink": {
+                    "enabled": prov.get("skylink", {}).get("enabled", False),
+                    "api_key": prov.get("skylink", {}).get("api_key", ""),
+                    "configured": bool(prov.get("skylink", {}).get("api_key")),
+                    "is_free": False
+                }
+            }
+        })
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
+@router.post("/providers/config")
+async def save_providers_config(request: Request):
+    """Saves updated external API provider keys and enabled states."""
+    try:
+        from web.services.config_manager import config_manager
+        body = await request.json()
+        cfg = config_manager.load()
+
+        if "providers" not in cfg:
+            cfg["providers"] = {}
+
+        incoming_providers = body.get("providers", {})
+        for prov_name, prov_data in incoming_providers.items():
+            if prov_name not in cfg["providers"]:
+                cfg["providers"][prov_name] = {}
+            if isinstance(prov_data, dict):
+                for k, v in prov_data.items():
+                    cfg["providers"][prov_name][k] = v
+
+        config_manager.save(cfg)
+        return JSONResponse({
+            "status": "success",
+            "message": "API keys and provider settings saved successfully."
+        })
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
+@router.post("/providers/verify")
+async def verify_provider_api(request: Request):
+    """Tests an API provider credentials in real-time."""
+    try:
+        import httpx
+        from web.services.config_manager import config_manager
+        body = await request.json()
+        provider = str(body.get("provider", "")).lower().strip()
+        api_key = str(body.get("api_key", "")).strip()
+
+        if not api_key and provider not in ("hexdb", "adsbdb"):
+            cfg = config_manager.load()
+            api_key = cfg.get("providers", {}).get(provider, {}).get("api_key", "").strip()
+
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            if provider == "airlabs":
+                if not api_key:
+                    return JSONResponse({"ok": False, "error": "AirLabs API Key is required to verify."})
+                url = f"https://airlabs.co/api/v9/fleets?hex=80169D&api_key={api_key}"
+                res = await client.get(url)
+                if res.status_code == 200:
+                    data = res.json()
+                    key_info = data.get("request", {}).get("key", {})
+                    limits = key_info.get("limits_total", "Active")
+                    return JSONResponse({"ok": True, "message": f"AirLabs connected! Key active ({limits} calls remaining)."})
+                return JSONResponse({"ok": False, "error": f"AirLabs returned HTTP {res.status_code}: {res.text[:150]}"})
+
+            elif provider == "api_ninjas":
+                if not api_key:
+                    return JSONResponse({"ok": False, "error": "API Ninjas Key is required to verify."})
+                url = "https://api.api-ninjas.com/v1/aircraft?manufacturer=Boeing&model=737"
+                res = await client.get(url, headers={"X-Api-Key": api_key})
+                if res.status_code == 200:
+                    return JSONResponse({"ok": True, "message": "API Ninjas connected! Aircraft specs API active."})
+                return JSONResponse({"ok": False, "error": f"API Ninjas returned HTTP {res.status_code}: {res.text[:150]}"})
+
+            elif provider == "airframes":
+                if not api_key:
+                    return JSONResponse({"ok": False, "error": "Airframes.io Key is required to verify."})
+                url = "https://api.airframes.io/aircraft"
+                res = await client.get(url, headers={"X-API-KEY": api_key})
+                if res.status_code in (200, 400, 404):
+                    return JSONResponse({"ok": True, "message": "Airframes.io API connection verified!"})
+                return JSONResponse({"ok": False, "error": f"Airframes returned HTTP {res.status_code}"})
+
+            elif provider == "skylink":
+                if not api_key:
+                    return JSONResponse({"ok": False, "error": "RapidAPI Key is required to verify SkyLink."})
+                url = "https://skylink-api.p.rapidapi.com/v3/adsb/aircraft"
+                res = await client.get(url, headers={"x-rapidapi-key": api_key, "x-rapidapi-host": "skylink-api.p.rapidapi.com"})
+                if res.status_code in (200, 400):
+                    return JSONResponse({"ok": True, "message": "SkyLink (RapidAPI) connection verified!"})
+                return JSONResponse({"ok": False, "error": f"SkyLink returned HTTP {res.status_code}: {res.text[:150]}"})
+
+            elif provider == "hexdb":
+                res = await client.get("https://hexdb.io/api/v1/aircraft/80169D")
+                if res.status_code == 200:
+                    return JSONResponse({"ok": True, "message": "HexDB public API is online and responding."})
+                return JSONResponse({"ok": False, "error": f"HexDB returned HTTP {res.status_code}"})
+
+            elif provider == "adsbdb":
+                res = await client.get("https://api.adsbdb.com/v0/callsign/IGO751")
+                if res.status_code == 200:
+                    return JSONResponse({"ok": True, "message": "ADSBDB public flight route API is online."})
+                return JSONResponse({"ok": False, "error": f"ADSBDB returned HTTP {res.status_code}"})
+
+            else:
+                return JSONResponse({"ok": False, "error": f"Unknown provider: {provider}"})
+
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)})
+
+
+@router.get("/station/config")
+async def get_station_config():
+    """Returns station, receiver, and collector parameters."""
+    try:
+        from web.services.config_manager import config_manager
+        cfg = config_manager.load()
+        tar_cfg = cfg.get("tar1090", {})
+        station_cfg = cfg.get("station", {})
+        gen_cfg = cfg.get("general", {})
+        col_cfg = cfg.get("collector", {})
+        tel_cfg = col_cfg.get("telemetry", {})
+
+        return JSONResponse({
+            "status": "success",
+            "station": {
+                "tar1090_url": tar_cfg.get("url", "http://192.168.0.132/tar1090/data/aircraft.json"),
+                "poll_interval": gen_cfg.get("poll_interval", 5),
+                "latitude": station_cfg.get("latitude", 22.5726),
+                "longitude": station_cfg.get("longitude", 88.3639),
+                "name": station_cfg.get("name", "SkyAlert Station"),
+                "session_timeout_minutes": col_cfg.get("session_timeout_minutes", 10),
+                "telemetry_enabled": tel_cfg.get("enabled", True),
+                "sample_interval_sec": tel_cfg.get("sample_interval_sec", 30),
+            }
+        })
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
+@router.post("/station/config")
+async def save_station_config(request: Request):
+    """Saves updated station parameters and immediately reloads collector."""
+    try:
+        from web.services.config_manager import config_manager
+        body = await request.json()
+        cfg = config_manager.load()
+
+        if "tar1090_url" in body:
+            if "tar1090" not in cfg:
+                cfg["tar1090"] = {}
+            cfg["tar1090"]["url"] = body["tar1090_url"].strip()
+
+        if "poll_interval" in body:
+            if "general" not in cfg:
+                cfg["general"] = {}
+            cfg["general"]["poll_interval"] = int(body["poll_interval"])
+
+        if "latitude" in body or "longitude" in body or "name" in body:
+            if "station" not in cfg:
+                cfg["station"] = {}
+            if "latitude" in body:
+                cfg["station"]["latitude"] = float(body["latitude"])
+            if "longitude" in body:
+                cfg["station"]["longitude"] = float(body["longitude"])
+            if "name" in body:
+                cfg["station"]["name"] = body["name"].strip()
+
+        if "session_timeout_minutes" in body or "telemetry_enabled" in body or "sample_interval_sec" in body:
+            if "collector" not in cfg:
+                cfg["collector"] = {}
+            if "session_timeout_minutes" in body:
+                cfg["collector"]["session_timeout_minutes"] = int(body["session_timeout_minutes"])
+            if "telemetry_enabled" in body or "sample_interval_sec" in body:
+                if "telemetry" not in cfg["collector"]:
+                    cfg["collector"]["telemetry"] = {}
+                if "telemetry_enabled" in body:
+                    cfg["collector"]["telemetry"]["enabled"] = bool(body["telemetry_enabled"])
+                if "sample_interval_sec" in body:
+                    cfg["collector"]["telemetry"]["sample_interval_sec"] = int(body["sample_interval_sec"])
+
+        config_manager.save(cfg)
+        return JSONResponse({"status": "success", "message": "Station parameters saved successfully."})
     except Exception as e:
         return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 

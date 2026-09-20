@@ -1334,43 +1334,282 @@
 
             <!-- 13. SETTINGS VIEW -->
             <section class="view-section" id="view-settings">
-                <div class="sky-panel" style="max-width: 700px;">
-                    <div class="sky-panel-header">
-                        <span class="sky-panel-title">⚙️ Station & Monitoring Configuration</span>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+                    <div>
+                        <h2 style="font-size: 20px; font-weight: 800; color: var(--text-primary); margin: 0; display: flex; align-items: center; gap: 8px;">
+                            <span>⚙️</span> System & Provider Settings
+                        </h2>
+                        <div style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">
+                            Configure external intelligence APIs, ADS-B receiver connections, and station parameters.
+                        </div>
                     </div>
-                    <div class="sky-panel-body">
-                        <form id="settings-form" style="display: flex; flex-direction: column; gap: 16px;">
-                            <div class="info-item-row">
-                                <span class="info-label">Receiver Feed URL (TAR1090)</span>
-                                <input type="text" class="sky-input" value="http://192.168.0.132/tar1090/data/aircraft.json" style="width: 320px;">
+                    <div style="display: flex; gap: 10px;">
+                        <button class="sky-btn" onclick="window.SkyAlertApp.openTelegramSettings()">
+                            💬 Telegram & Tracking Rules
+                        </button>
+                        <button class="sky-btn" onclick="window.SkyAlertApp.loadAllSettings()">
+                            🔄 Refresh Settings
+                        </button>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 20px;">
+                    
+                    <!-- 1. External Data Providers & API Keys -->
+                    <div class="tg-card">
+                        <div class="tg-card-header">
+                            <div class="tg-card-title">
+                                <span>🔑</span> External Data Providers & API Integrations
                             </div>
-                            <div class="info-item-row">
-                                <span class="info-label">SkyAlert Backend API URL</span>
-                                <input type="text" class="sky-input" value="http://192.168.0.132/skyalert/api" style="width: 320px;">
+                            <span class="tg-bot-status-pill connected" id="providers-status-badge">
+                                <span class="status-dot"></span> Active
+                            </span>
+                        </div>
+                        <div class="tg-card-body">
+                            <div style="font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.15); border-radius: 8px; padding: 10px 14px;">
+                                💡 SkyAlert uses multi-tiered enrichment. Free community providers (HexDB, ADSBDB, and local reference tables) are active by default. Configure optional commercial keys below for enhanced airline fleet tracking and technical specs.
                             </div>
-                            <div class="info-item-row">
-                                <span class="info-label">Station Latitude</span>
-                                <input type="text" class="sky-input" value="22.5726" style="width: 140px;">
+
+                            <!-- Provider 1: AirLabs -->
+                            <div class="tg-switch-row" style="flex-direction: column; align-items: stretch; gap: 10px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <div style="font-weight: 700; font-size: 13.5px; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                                            <span>✈️</span> AirLabs API
+                                            <span class="tg-bot-status-pill checking" id="pill-airlabs" style="font-size: 10.5px; padding: 2px 8px;">Checking...</span>
+                                        </div>
+                                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
+                                            Live airline fleet registration, MSN, aircraft model, and origin/destination flight routes.
+                                        </div>
+                                    </div>
+                                    <label class="tg-toggle">
+                                        <input type="checkbox" id="prov-airlabs-enabled" checked>
+                                        <span class="tg-slider"></span>
+                                    </label>
+                                </div>
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <input type="password" class="sky-input" id="prov-airlabs-key" placeholder="Enter AirLabs API Key (e.g. f9da3...)" style="flex: 1; font-family: monospace; font-size: 12.5px;">
+                                    <button type="button" class="sky-btn" onclick="window.SkyAlertApp.toggleApiKeyVisibility('prov-airlabs-key', this)" style="padding: 6px 10px; font-size: 12px;">👁️</button>
+                                    <button type="button" class="sky-btn" onclick="window.SkyAlertApp.verifyProviderKey('airlabs')" style="background: rgba(56, 189, 248, 0.1); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.25); font-size: 12px; white-space: nowrap;">⚡ Test Key</button>
+                                </div>
+                                <div style="font-size: 11px; color: #64748b;">
+                                    Free keys available at <a href="https://airlabs.co" target="_blank" rel="noopener" style="color: #38bdf8; text-decoration: underline;">airlabs.co</a> (up to 1,000 requests/month).
+                                </div>
                             </div>
-                            <div class="info-item-row">
-                                <span class="info-label">Station Longitude</span>
-                                <input type="text" class="sky-input" value="88.3639" style="width: 140px;">
+
+                            <!-- Provider 2: API Ninjas (Aircraft Specs) -->
+                            <div class="tg-switch-row" style="flex-direction: column; align-items: stretch; gap: 10px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <div style="font-weight: 700; font-size: 13.5px; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                                            <span>📐</span> API Ninjas (Aircraft Specs)
+                                            <span class="tg-bot-status-pill checking" id="pill-api-ninjas" style="font-size: 10.5px; padding: 2px 8px;">Checking...</span>
+                                        </div>
+                                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
+                                            Technical dimensions: wingspan, ceiling, cruise speed, engine specifications, and payload.
+                                        </div>
+                                    </div>
+                                    <label class="tg-toggle">
+                                        <input type="checkbox" id="prov-api-ninjas-enabled" checked>
+                                        <span class="tg-slider"></span>
+                                    </label>
+                                </div>
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <input type="password" class="sky-input" id="prov-api-ninjas-key" placeholder="Enter API Ninjas Key" style="flex: 1; font-family: monospace; font-size: 12.5px;">
+                                    <button type="button" class="sky-btn" onclick="window.SkyAlertApp.toggleApiKeyVisibility('prov-api-ninjas-key', this)" style="padding: 6px 10px; font-size: 12px;">👁️</button>
+                                    <button type="button" class="sky-btn" onclick="window.SkyAlertApp.verifyProviderKey('api_ninjas')" style="background: rgba(56, 189, 248, 0.1); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.25); font-size: 12px; white-space: nowrap;">⚡ Test Key</button>
+                                </div>
+                                <div style="font-size: 11px; color: #64748b;">
+                                    Free tier with 10,000 monthly calls available at <a href="https://api-ninjas.com" target="_blank" rel="noopener" style="color: #38bdf8; text-decoration: underline;">api-ninjas.com</a>.
+                                </div>
                             </div>
-                            <div class="info-item-row">
-                                <span class="info-label">Session Inactivity Timeout</span>
-                                <input type="text" class="sky-input" value="10 minutes" style="width: 140px;">
+
+                            <!-- Provider 3: Airframes.io -->
+                            <div class="tg-switch-row" style="flex-direction: column; align-items: stretch; gap: 10px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <div style="font-weight: 700; font-size: 13.5px; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                                            <span>📡</span> Airframes.io
+                                            <span class="tg-bot-status-pill checking" id="pill-airframes" style="font-size: 10.5px; padding: 2px 8px;">Checking...</span>
+                                        </div>
+                                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
+                                            Crowdsourced aviation transponder & Mode-S registration lookups.
+                                        </div>
+                                    </div>
+                                    <label class="tg-toggle">
+                                        <input type="checkbox" id="prov-airframes-enabled" checked>
+                                        <span class="tg-slider"></span>
+                                    </label>
+                                </div>
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <input type="password" class="sky-input" id="prov-airframes-key" placeholder="Enter Airframes.io API Key (Optional)" style="flex: 1; font-family: monospace; font-size: 12.5px;">
+                                    <button type="button" class="sky-btn" onclick="window.SkyAlertApp.toggleApiKeyVisibility('prov-airframes-key', this)" style="padding: 6px 10px; font-size: 12px;">👁️</button>
+                                    <button type="button" class="sky-btn" onclick="window.SkyAlertApp.verifyProviderKey('airframes')" style="background: rgba(56, 189, 248, 0.1); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.25); font-size: 12px; white-space: nowrap;">⚡ Test Key</button>
+                                </div>
+                                <div style="font-size: 11px; color: #64748b;">
+                                    Community airframe registry at <a href="https://airframes.io" target="_blank" rel="noopener" style="color: #38bdf8; text-decoration: underline;">airframes.io</a>.
+                                </div>
                             </div>
-                            <div class="info-item-row">
-                                <span class="info-label">Timezone Display</span>
-                                <span class="info-value">IST (Indian Standard Time · UTC+5:30)</span>
+
+                            <!-- Provider 4: SkyLink (RapidAPI) -->
+                            <div class="tg-switch-row" style="flex-direction: column; align-items: stretch; gap: 10px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <div style="font-weight: 700; font-size: 13.5px; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                                            <span>☁️</span> SkyLink (RapidAPI)
+                                            <span class="tg-bot-status-pill checking" id="pill-skylink" style="font-size: 10.5px; padding: 2px 8px;">Optional</span>
+                                        </div>
+                                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
+                                            Optional RapidAPI integration for live aircraft tracking and photo lookups.
+                                        </div>
+                                    </div>
+                                    <label class="tg-toggle">
+                                        <input type="checkbox" id="prov-skylink-enabled">
+                                        <span class="tg-slider"></span>
+                                    </label>
+                                </div>
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <input type="password" class="sky-input" id="prov-skylink-key" placeholder="Enter RapidAPI Key" style="flex: 1; font-family: monospace; font-size: 12.5px;">
+                                    <button type="button" class="sky-btn" onclick="window.SkyAlertApp.toggleApiKeyVisibility('prov-skylink-key', this)" style="padding: 6px 10px; font-size: 12px;">👁️</button>
+                                    <button type="button" class="sky-btn" onclick="window.SkyAlertApp.verifyProviderKey('skylink')" style="background: rgba(56, 189, 248, 0.1); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.25); font-size: 12px; white-space: nowrap;">⚡ Test Key</button>
+                                </div>
+                                <div style="font-size: 11px; color: #64748b;">
+                                    Obtain key at <a href="https://rapidapi.com" target="_blank" rel="noopener" style="color: #38bdf8; text-decoration: underline;">rapidapi.com</a>.
+                                </div>
                             </div>
-                            <div style="margin-top: 10px;">
-                                <button type="button" class="sky-btn primary" onclick="alert('Station parameters saved successfully.')">
-                                    Save Configuration
+
+                            <!-- Provider 5 & 6: Zero-Config Free Community Providers -->
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                <div class="tg-switch-row" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+                                    <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                                        <div style="font-weight: 700; font-size: 13px; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                                            <span>🌐</span> HexDB API
+                                        </div>
+                                        <label class="tg-toggle">
+                                            <input type="checkbox" id="prov-hexdb-enabled" checked>
+                                            <span class="tg-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div style="font-size: 11px; color: var(--text-secondary);">
+                                        Mode-S transponder lookup. Free & public.
+                                    </div>
+                                    <span class="tg-bot-status-pill connected" style="font-size: 10px; padding: 1px 6px;">🟢 Free / No Key</span>
+                                </div>
+
+                                <div class="tg-switch-row" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+                                    <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                                        <div style="font-weight: 700; font-size: 13px; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                                            <span>🗺️</span> ADSBDB API
+                                        </div>
+                                        <label class="tg-toggle">
+                                            <input type="checkbox" id="prov-adsbdb-enabled" checked>
+                                            <span class="tg-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div style="font-size: 11px; color: var(--text-secondary);">
+                                        Callsign flight route database. Free & public.
+                                    </div>
+                                    <span class="tg-bot-status-pill connected" style="font-size: 10px; padding: 1px 6px;">🟢 Free / No Key</span>
+                                </div>
+                            </div>
+
+                            <button type="button" class="sky-btn primary" onclick="window.SkyAlertApp.saveProviderSettings()" style="margin-top: 10px; padding: 12px 18px; font-weight: 700; font-size: 14px;">
+                                💾 Save API & Provider Settings
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 2. Receiver Feed & Station Coordinates -->
+                    <div style="display: flex; flex-direction: column; gap: 20px;">
+                        
+                        <div class="tg-card">
+                            <div class="tg-card-header">
+                                <div class="tg-card-title">
+                                    <span>📡</span> ADS-B Receiver & Station Parameters
+                                </div>
+                            </div>
+                            <div class="tg-card-body">
+                                <div>
+                                    <label class="tg-label">Receiver Feed URL (TAR1090 / Readsb)</label>
+                                    <input type="text" class="sky-input" id="station-tar1090-url" placeholder="http://192.168.0.132/tar1090/data/aircraft.json" style="width: 100%; font-family: monospace; font-size: 13px;">
+                                    <div class="tg-hint">Point to your local SDR receiver tar1090/readsb aircraft.json feed.</div>
+                                </div>
+
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                                    <div>
+                                        <label class="tg-label">Station Latitude</label>
+                                        <input type="number" step="0.0001" class="sky-input" id="station-lat" placeholder="22.5726" style="width: 100%;">
+                                    </div>
+                                    <div>
+                                        <label class="tg-label">Station Longitude</label>
+                                        <input type="number" step="0.0001" class="sky-input" id="station-lon" placeholder="88.3639" style="width: 100%;">
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="tg-label">Station Node Name</label>
+                                    <input type="text" class="sky-input" id="station-name" placeholder="SkyAlert Primary Node" style="width: 100%;">
+                                </div>
+
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                                    <div>
+                                        <label class="tg-label">Poll Interval (seconds)</label>
+                                        <input type="number" min="1" max="60" class="sky-input" id="station-poll-interval" placeholder="5" style="width: 100%;">
+                                    </div>
+                                    <div>
+                                        <label class="tg-label">Session Inactivity Gap (min)</label>
+                                        <input type="number" min="2" max="60" class="sky-input" id="station-session-timeout" placeholder="10" style="width: 100%;">
+                                    </div>
+                                </div>
+
+                                <div class="tg-switch-row">
+                                    <div>
+                                        <div style="font-weight: 700; font-size: 13px; color: var(--text-primary);">Smart Trajectory Sampling</div>
+                                        <div style="font-size: 12px; color: var(--text-secondary);">Throttles breadcrumb samples (default 30s) to prevent DB bloat.</div>
+                                    </div>
+                                    <label class="tg-toggle">
+                                        <input type="checkbox" id="station-telemetry-toggle" checked>
+                                        <span class="tg-slider"></span>
+                                    </label>
+                                </div>
+
+                                <button type="button" class="sky-btn primary" onclick="window.SkyAlertApp.saveStationSettings()" style="padding: 12px 18px; font-weight: 700; font-size: 14px;">
+                                    💾 Save Station Parameters
                                 </button>
                             </div>
-                        </form>
+                        </div>
+
+                        <!-- 3. Architecture Info Card -->
+                        <div class="tg-card">
+                            <div class="tg-card-header">
+                                <div class="tg-card-title">
+                                    <span>ℹ️</span> Multi-Tier Enrichment Architecture
+                                </div>
+                            </div>
+                            <div class="tg-card-body" style="font-size: 12.5px; color: var(--text-secondary); line-height: 1.6;">
+                                <div style="display: flex; flex-direction: column; gap: 8px;">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <span style="background: rgba(34, 197, 94, 0.2); color: #22c55e; border-radius: 4px; padding: 2px 6px; font-weight: 700; font-size: 11px;">Tier 1</span>
+                                        <span style="color: var(--text-primary); font-weight: 600;">AirLabs API:</span> Live flight routes and fleet identity.
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <span style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; border-radius: 4px; padding: 2px 6px; font-weight: 700; font-size: 11px;">Tier 2</span>
+                                        <span style="color: var(--text-primary); font-weight: 600;">HexDB & ADSBDB:</span> Zero-config free Mode-S & callsign databases.
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <span style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-radius: 4px; padding: 2px 6px; font-weight: 700; font-size: 11px;">Tier 3</span>
+                                        <span style="color: var(--text-primary); font-weight: 600;">API Ninjas:</span> Technical specifications, wingspan, and engine count.
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <span style="background: rgba(234, 179, 8, 0.2); color: #eab308; border-radius: 4px; padding: 2px 6px; font-weight: 700; font-size: 11px;">Tier 4</span>
+                                        <span style="color: var(--text-primary); font-weight: 600;">Offline Database:</span> 33 MB local reference CSV for complete airframe coverage.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
+
                 </div>
             </section>
 

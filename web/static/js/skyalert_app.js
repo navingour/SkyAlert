@@ -262,6 +262,8 @@ class SkyAlertApp {
             this.loadTelegramSettings();
         } else if (viewName === "unknown") {
             this.loadUnknownView();
+        } else if (viewName === "settings") {
+            this.loadAllSettings();
         }
     }
 
@@ -2979,6 +2981,232 @@ class SkyAlertApp {
         } else {
             tokenInput.type = 'password';
             if (eye) eye.textContent = '👁️ Show Token';
+        }
+    }
+
+    async loadAllSettings() {
+        await Promise.all([
+            this.loadProviderSettings(),
+            this.loadStationSettings()
+        ]);
+    }
+
+    async loadProviderSettings() {
+        try {
+            const res = await fetch('/api/providers/config');
+            const data = await res.json();
+            if (data.status !== 'success') return;
+            const provs = data.providers || {};
+
+            const map = {
+                'airlabs': { en: 'prov-airlabs-enabled', key: 'prov-airlabs-key', pill: 'pill-airlabs' },
+                'api_ninjas': { en: 'prov-api-ninjas-enabled', key: 'prov-api-ninjas-key', pill: 'pill-api-ninjas' },
+                'airframes': { en: 'prov-airframes-enabled', key: 'prov-airframes-key', pill: 'pill-airframes' },
+                'skylink': { en: 'prov-skylink-enabled', key: 'prov-skylink-key', pill: 'pill-skylink' },
+                'hexdb': { en: 'prov-hexdb-enabled' },
+                'adsbdb': { en: 'prov-adsbdb-enabled' }
+            };
+
+            for (const [pName, pConfig] of Object.entries(provs)) {
+                const elMap = map[pName];
+                if (!elMap) continue;
+
+                const enEl = document.getElementById(elMap.en);
+                if (enEl) enEl.checked = pConfig.enabled !== false;
+
+                if (elMap.key) {
+                    const keyEl = document.getElementById(elMap.key);
+                    if (keyEl) keyEl.value = pConfig.api_key || '';
+                }
+
+                if (elMap.pill) {
+                    const pillEl = document.getElementById(elMap.pill);
+                    if (pillEl) {
+                        if (pConfig.configured) {
+                            pillEl.className = 'tg-bot-status-pill connected';
+                            pillEl.innerHTML = '<span class="status-dot"></span> Key Configured';
+                        } else {
+                            pillEl.className = 'tg-bot-status-pill disconnected';
+                            pillEl.innerHTML = '<span class="status-dot"></span> No Key';
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Failed to load provider settings:", e);
+        }
+    }
+
+    async saveProviderSettings() {
+        const payload = {
+            providers: {
+                airlabs: {
+                    enabled: document.getElementById('prov-airlabs-enabled')?.checked ?? true,
+                    api_key: document.getElementById('prov-airlabs-key')?.value?.trim() ?? ''
+                },
+                api_ninjas: {
+                    enabled: document.getElementById('prov-api-ninjas-enabled')?.checked ?? true,
+                    api_key: document.getElementById('prov-api-ninjas-key')?.value?.trim() ?? ''
+                },
+                airframes: {
+                    enabled: document.getElementById('prov-airframes-enabled')?.checked ?? true,
+                    api_key: document.getElementById('prov-airframes-key')?.value?.trim() ?? ''
+                },
+                skylink: {
+                    enabled: document.getElementById('prov-skylink-enabled')?.checked ?? false,
+                    api_key: document.getElementById('prov-skylink-key')?.value?.trim() ?? ''
+                },
+                hexdb: {
+                    enabled: document.getElementById('prov-hexdb-enabled')?.checked ?? true
+                },
+                adsbdb: {
+                    enabled: document.getElementById('prov-adsbdb-enabled')?.checked ?? true
+                }
+            }
+        };
+
+        try {
+            const res = await fetch('/api/providers/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                alert("✅ API Provider credentials and integration settings saved successfully.");
+                this.loadProviderSettings();
+            } else {
+                alert(`Error saving provider settings: ${data.message || 'Unknown error'}`);
+            }
+        } catch (e) {
+            console.error("Save provider error:", e);
+            alert("Failed to save provider configuration to backend.");
+        }
+    }
+
+    async verifyProviderKey(providerName) {
+        const keyMap = {
+            'airlabs': 'prov-airlabs-key',
+            'api_ninjas': 'prov-api-ninjas-key',
+            'airframes': 'prov-airframes-key',
+            'skylink': 'prov-skylink-key'
+        };
+        const pillMap = {
+            'airlabs': 'pill-airlabs',
+            'api_ninjas': 'pill-api-ninjas',
+            'airframes': 'pill-airframes',
+            'skylink': 'pill-skylink'
+        };
+
+        const inputEl = document.getElementById(keyMap[providerName]);
+        const pillEl = document.getElementById(pillMap[providerName]);
+        const apiKey = inputEl ? inputEl.value.trim() : '';
+
+        if (!apiKey && !['hexdb', 'adsbdb'].includes(providerName)) {
+            alert(`Please enter an API key for ${providerName} to test.`);
+            return;
+        }
+
+        if (pillEl) {
+            pillEl.className = 'tg-bot-status-pill checking';
+            pillEl.innerHTML = '<span class="status-dot"></span> Testing...';
+        }
+
+        try {
+            const res = await fetch('/api/providers/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider: providerName, api_key: apiKey })
+            });
+            const data = await res.json();
+            if (data.ok) {
+                if (pillEl) {
+                    pillEl.className = 'tg-bot-status-pill connected';
+                    pillEl.innerHTML = '<span class="status-dot"></span> 🟢 Verified';
+                }
+                alert(`✅ Verification Succeeded:\n${data.message}`);
+            } else {
+                if (pillEl) {
+                    pillEl.className = 'tg-bot-status-pill disconnected';
+                    pillEl.innerHTML = '<span class="status-dot"></span> 🔴 Failed';
+                }
+                alert(`❌ Verification Failed:\n${data.error || 'Could not validate key.'}`);
+            }
+        } catch (e) {
+            if (pillEl) {
+                pillEl.className = 'tg-bot-status-pill disconnected';
+                pillEl.innerHTML = '<span class="status-dot"></span> Error';
+            }
+            alert(`Network error testing ${providerName}: ${e}`);
+        }
+    }
+
+    toggleApiKeyVisibility(inputId, btnEl) {
+        const input = document.getElementById(inputId);
+        if (!input) return;
+        if (input.type === 'password') {
+            input.type = 'text';
+            if (btnEl) btnEl.textContent = '🔒';
+        } else {
+            input.type = 'password';
+            if (btnEl) btnEl.textContent = '👁️';
+        }
+    }
+
+    async loadStationSettings() {
+        try {
+            const res = await fetch('/api/station/config');
+            const data = await res.json();
+            if (data.status !== 'success') return;
+            const st = data.station || {};
+
+            const tarUrl = document.getElementById('station-tar1090-url');
+            const pollInt = document.getElementById('station-poll-interval');
+            const lat = document.getElementById('station-lat');
+            const lon = document.getElementById('station-lon');
+            const name = document.getElementById('station-name');
+            const sessTimeout = document.getElementById('station-session-timeout');
+            const telToggle = document.getElementById('station-telemetry-toggle');
+
+            if (tarUrl) tarUrl.value = st.tar1090_url || '';
+            if (pollInt) pollInt.value = st.poll_interval || 5;
+            if (lat) lat.value = st.latitude ?? 22.5726;
+            if (lon) lon.value = st.longitude ?? 88.3639;
+            if (name) name.value = st.name || 'SkyAlert Station';
+            if (sessTimeout) sessTimeout.value = st.session_timeout_minutes || 10;
+            if (telToggle) telToggle.checked = st.telemetry_enabled !== false;
+        } catch (e) {
+            console.error("Failed to load station settings:", e);
+        }
+    }
+
+    async saveStationSettings() {
+        const payload = {
+            tar1090_url: document.getElementById('station-tar1090-url')?.value?.trim(),
+            poll_interval: parseInt(document.getElementById('station-poll-interval')?.value ?? '5'),
+            latitude: parseFloat(document.getElementById('station-lat')?.value ?? '22.5726'),
+            longitude: parseFloat(document.getElementById('station-lon')?.value ?? '88.3639'),
+            name: document.getElementById('station-name')?.value?.trim() ?? 'SkyAlert Station',
+            session_timeout_minutes: parseInt(document.getElementById('station-session-timeout')?.value ?? '10'),
+            telemetry_enabled: document.getElementById('station-telemetry-toggle')?.checked ?? true
+        };
+
+        try {
+            const res = await fetch('/api/station/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                alert("✅ Station and receiver connection parameters saved successfully.");
+                this.loadStationSettings();
+            } else {
+                alert(`Error saving station settings: ${data.message || 'Unknown error'}`);
+            }
+        } catch (e) {
+            console.error("Save station error:", e);
+            alert("Failed to save station configuration.");
         }
     }
 

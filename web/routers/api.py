@@ -1431,90 +1431,131 @@ async def get_unknown_aircraft(limit: int = 50):
 
 @router.post("/aircraft/{id_or_hex}/enrich")
 async def trigger_enrichment(id_or_hex: str):
-    """Trigger aircraft enrichment via AirLabs."""
+    """Trigger aircraft enrichment via AirLabs, HexDB, and local reference databases."""
     try:
         from app.config import load_config
         from app.backend.db import DatabaseManager
+        from app.aircraft_enricher import aircraft_enricher
         import httpx
         
+        hex_clean = id_or_hex.strip().upper()
         config = load_config()
         api_key = config.get("providers", {}).get("airlabs", {}).get("api_key")
         
-        if not api_key:
-            return JSONResponse({"status": "error", "message": "AirLabs API key not configured"})
-
         # Get DB manager
         db = DatabaseManager()
-        
-        # 1. Ensure aircraft exists in DB to get ac_id
-        ac_id = db.upsert_aircraft(id_or_hex)
+        ac_id = db.upsert_aircraft(hex_clean)
 
         enrich_data = {}
         route_data = {}
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            # 2. Fetch Fleets (Aircraft DB)
-            fleet_url = f"https://airlabs.co/api/v9/fleets?hex={id_or_hex}&api_key={api_key}"
-            fleet_res = await client.get(fleet_url)
-            if fleet_res.status_code == 200:
-                fleet_json = fleet_res.json().get("response", [])
-                if fleet_json and len(fleet_json) > 0:
-                    f = fleet_json[0]
-                    enrich_data = {
-                        "registration": f.get("reg_number"),
-                        "aircraft_type": f.get("icao_code") or f.get("iata_code"),
-                        "manufacturer": f.get("manufacturer"),
-                        "model": f.get("model", f.get("name")), 
-                        "operator_name": f.get("airline_name") or f.get("airline_id"),
-                        "operator_icao": f.get("airline_icao"),
-                        "operator_iata": f.get("airline_iata"),
-                        "country": f.get("country_code"),
-                        "source": "AirLabs API",
-                        "source_url": "https://airlabs.co",
-                        "serial_number": f.get("msn"),
-                        "type_code": f.get("iata_code"),
-                        "icao_aircraft_type": f.get("icao_code"),
-                        "built": str(f.get("built")) if f.get("built") else None,
-                        "first_flight_date": f.get("first_flight"),
-                    }
-                    
-            # 3. Fetch Live Flight (Route)
-            flight_url = f"https://airlabs.co/api/v9/flights?hex={id_or_hex}&api_key={api_key}"
-            flight_res = await client.get(flight_url)
-            if flight_res.status_code == 200:
-                flight_json = flight_res.json().get("response", [])
-                if flight_json and len(flight_json) > 0:
-                    fl = flight_json[0]
-                    route_data = {
-                        "origin_iata": fl.get("dep_iata"),
-                        "origin_icao": fl.get("dep_icao"),
-                        "destination_iata": fl.get("arr_iata"),
-                        "destination_icao": fl.get("arr_icao")
-                    }
-                    if not enrich_data.get("operator_name") and fl.get("airline_iata"):
-                        enrich_data["operator_iata"] = fl.get("airline_iata")
-                        enrich_data["operator_icao"] = fl.get("airline_icao")
-                        enrich_data["registration"] = enrich_data.get("registration") or fl.get("reg_number")
+        # 1. Try AirLabs if API key is configured
+        if api_key:
+            try:
+                async with httpx.AsyncClient(timeout=6.0) as client:
+                    fleet_url = f"https://airlabs.co/api/v9/fleets?hex={hex_clean}&api_key={api_key}"
+                    fleet_res = await client.get(fleet_url)
+                    if fleet_res.status_code == 200:
+                        fleet_json = fleet_res.json().get("response", [])
+                        if fleet_json and len(fleet_json) > 0:
+                            f = fleet_json[0]
+                            enrich_data = {
+                                "registration": f.get("reg_number"),
+                                "aircraft_type": f.get("icao_code") or f.get("iata_code"),
+                                "manufacturer": f.get("manufacturer"),
+                                "model": f.get("model", f.get("name")), 
+                                "operator_name": f.get("airline_name") or f.get("airline_id"),
+                                "operator_icao": f.get("airline_icao"),
+                                "operator_iata": f.get("airline_iata"),
+                                "country": f.get("country_code"),
+                                "source": "AirLabs API",
+                                "source_url": "https://airlabs.co",
+                                "serial_number": f.get("msn"),
+                                "type_code": f.get("iata_code"),
+                                "icao_aircraft_type": f.get("icao_code"),
+                                "built": str(f.get("built")) if f.get("built") else None,
+                                "first_flight_date": f.get("first_flight"),
+                            }
+                            
+                    flight_url = f"https://airlabs.co/api/v9/flights?hex={hex_clean}&api_key={api_key}"
+                    flight_res = await client.get(flight_url)
+                    if flight_res.status_code == 200:
+                        flight_json = flight_res.json().get("response", [])
+                        if flight_json and len(flight_json) > 0:
+                            fl = flight_json[0]
+                            route_data = {
+                                "origin_iata": fl.get("dep_iata"),
+                                "origin_icao": fl.get("dep_icao"),
+                                "destination_iata": fl.get("arr_iata"),
+                                "destination_icao": fl.get("arr_icao")
+                            }
+                            if not enrich_data.get("operator_name") and fl.get("airline_iata"):
+                                enrich_data["operator_iata"] = fl.get("airline_iata")
+                                enrich_data["operator_icao"] = fl.get("airline_icao")
+                                enrich_data["registration"] = enrich_data.get("registration") or fl.get("reg_number")
+            except Exception as e:
+                logger.debug(f"AirLabs lookup notice for {hex_clean}: {e}")
+
+        # 2. If registration or type still missing, query HexDB (Free, zero-config)
+        if not enrich_data.get("registration") or not enrich_data.get("aircraft_type"):
+            try:
+                async with httpx.AsyncClient(timeout=4.0) as client:
+                    hex_res = await client.get(f"https://hexdb.io/api/v1/aircraft/{hex_clean}")
+                    if hex_res.status_code == 200:
+                        hdata = hex_res.json()
+                        if isinstance(hdata, dict) and hdata.get("Registration"):
+                            enrich_data["registration"] = enrich_data.get("registration") or hdata.get("Registration")
+                            enrich_data["aircraft_type"] = enrich_data.get("aircraft_type") or hdata.get("ICAOTypeCode")
+                            enrich_data["manufacturer"] = enrich_data.get("manufacturer") or hdata.get("Manufacturer")
+                            enrich_data["model"] = enrich_data.get("model") or hdata.get("Type")
+                            enrich_data["operator_name"] = enrich_data.get("operator_name") or hdata.get("RegisteredOwners")
+                            enrich_data["operator_icao"] = enrich_data.get("operator_icao") or hdata.get("OperatorFlagCode")
+                            enrich_data["source"] = enrich_data.get("source") or "HexDB API"
+            except Exception as e:
+                logger.debug(f"HexDB lookup notice for {hex_clean}: {e}")
+
+        # 3. If still missing, query local reference database
+        if not enrich_data.get("registration") or not enrich_data.get("aircraft_type"):
+            item = {"icao_hex": hex_clean}
+            enriched = aircraft_enricher.enrich_item(item)
+            if enriched.get("registration") and enriched.get("registration") != "-":
+                enrich_data["registration"] = enrich_data.get("registration") or enriched.get("registration")
+            if enriched.get("aircraft_type") and enriched.get("aircraft_type") != "-":
+                enrich_data["aircraft_type"] = enrich_data.get("aircraft_type") or enriched.get("aircraft_type")
+            if enriched.get("manufacturer") and enriched.get("manufacturer") != "-":
+                enrich_data["manufacturer"] = enrich_data.get("manufacturer") or enriched.get("manufacturer")
+            if enriched.get("model") and enriched.get("model") != "-":
+                enrich_data["model"] = enrich_data.get("model") or enriched.get("model")
+            if enriched.get("operator") and enriched.get("operator") not in ("-", "Unknown"):
+                enrich_data["operator_name"] = enrich_data.get("operator_name") or enriched.get("operator")
+            if not enrich_data.get("source"):
+                enrich_data["source"] = "Local Reference DB"
 
         # 4. Save to DB
         if enrich_data:
             db.upsert_enrichment(ac_id, enrich_data)
             
         if route_data and (route_data.get("origin_icao") or route_data.get("origin_iata")):
-            hex_upper = id_or_hex.strip().upper()
-            ADS_B_ROUTE_CACHE[hex_upper] = route_data
+            ADS_B_ROUTE_CACHE[hex_clean] = route_data
             session_id = db.get_active_session(ac_id)
             if session_id:
                 db.update_session_route(session_id, route_data)
 
-        return JSONResponse({
-            "status": "success",
-            "hex": id_or_hex,
-            "message": "Successfully refreshed enrichment data from AirLabs."
-        })
+        if enrich_data:
+            source = enrich_data.get("source", "AirLabs")
+            return JSONResponse({
+                "status": "success",
+                "hex": hex_clean,
+                "message": f"Successfully enriched {hex_clean} ({enrich_data.get('registration', 'Active')}) via {source}."
+            })
+        else:
+            return JSONResponse({
+                "status": "error",
+                "message": f"No enrichment record found for {hex_clean} across AirLabs, HexDB, or local databases."
+            })
 
     except Exception as e:
-        logger.exception("Error triggering AirLabs enrichment")
+        logger.exception("Error triggering enrichment")
         return JSONResponse({
             "status": "error",
             "message": f"Enrichment failed: {str(e)}"

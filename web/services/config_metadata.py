@@ -21,6 +21,56 @@ FIELD_METADATA = {
         "type": "url"
     },
 
+    "providers.airlabs.enabled": {
+        "label": "AirLabs Enabled",
+        "icon": "✈️",
+        "type": "bool"
+    },
+
+    "providers.airlabs.api_key": {
+        "label": "AirLabs API Key",
+        "help": "AirLabs API key for aircraft specs & airline registration",
+        "icon": "🔑",
+        "type": "password"
+    },
+
+    "providers.api_ninjas.enabled": {
+        "label": "API Ninjas Enabled",
+        "icon": "📐",
+        "type": "bool"
+    },
+
+    "providers.api_ninjas.api_key": {
+        "label": "API Ninjas API Key",
+        "help": "API Ninjas key for technical specifications",
+        "icon": "🔑",
+        "type": "password"
+    },
+
+    "providers.airframes.enabled": {
+        "label": "Airframes.io Enabled",
+        "icon": "📡",
+        "type": "bool"
+    },
+
+    "providers.airframes.api_key": {
+        "label": "Airframes API Key",
+        "icon": "🔑",
+        "type": "password"
+    },
+
+    "providers.skylink.enabled": {
+        "label": "SkyLink Enabled",
+        "icon": "🌐",
+        "type": "bool"
+    },
+
+    "providers.skylink.api_key": {
+        "label": "SkyLink API Key",
+        "icon": "🔑",
+        "type": "password"
+    },
+
     "telegram.enabled": {
         "label": "Enable Telegram",
         "icon": "💬"

@@ -25,6 +25,7 @@ data/*.sqlite3
 
 # Keep the data/ directory tracked but empty
 !data/.gitkeep
+data/cache/
 
 # ────────────────────────────────────────────────
 # Logs

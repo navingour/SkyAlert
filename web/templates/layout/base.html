@@ -25,7 +25,7 @@
     <link rel="apple-touch-icon" href="/static/img/favicon.png">
 
     <!-- SkyAlert Design System CSS -->
-    <link rel="stylesheet" href="/static/css/skyalert.css">
+    <link rel="stylesheet" href="/static/css/skyalert.css?v=20260920-4">
 </head>
 <body>
 
@@ -905,6 +905,9 @@
                             <button class="sky-btn" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);" onclick="window.SkyAlertApp.sendTelegramTestAlert()">
                                 🚀 Send Test Alert
                             </button>
+                            <button class="sky-btn" onclick="window.location.hash='settings'" title="Open External APIs and Station Configuration">
+                                ⚙️ Station & API Settings
+                            </button>
                             <button class="sky-btn primary" onclick="window.SkyAlertApp.saveTelegramSettings()">
                                 💾 Save Settings
                             </button>
@@ -1650,8 +1653,8 @@
 </div>
 
 <!-- Scripts -->
-<script src="/static/js/radar_map.js"></script>
-<script src="/static/js/skyalert_app.js"></script>
+<script src="/static/js/radar_map.js?v=20260920-4"></script>
+<script src="/static/js/skyalert_app.js?v=20260920-4"></script>
 
 </body>
 </html>

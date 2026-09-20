@@ -144,14 +144,22 @@ class SkyAlertApp {
     }
 
     handleHashChange() {
-        const hash = window.location.hash.replace("#", "") || "dashboard";
-        if (hash.startsWith("aircraft-profile/")) {
-            const hex = hash.split("/")[1];
+        let route = (window.location.hash || "").replace("#", "").trim();
+        if (!route) {
+            const path = (window.location.pathname || "").replace(/^\/+|\/+$/g, "").trim();
+            if (path && path !== "dashboard" && path !== "index.html") {
+                route = path;
+            }
+        }
+        route = route || "dashboard";
+
+        if (route.startsWith("aircraft-profile/")) {
+            const hex = route.split("/")[1];
             this.loadAircraftProfile(hex);
             return;
         }
 
-        this.switchView(hash);
+        this.switchView(route);
     }
 
     switchView(viewName) {

@@ -25,7 +25,7 @@
     <link rel="apple-touch-icon" href="/static/img/favicon.png">
 
     <!-- SkyAlert Design System CSS -->
-    <link rel="stylesheet" href="/static/css/skyalert.css?v=20260920-4">
+    <link rel="stylesheet" href="/static/css/skyalert.css?v=20260920-5">
 </head>
 <body>
 
@@ -1089,6 +1089,124 @@
 
                     </div>
 
+                    <!-- 2.5 External Intelligence APIs & Data Providers Card -->
+                    <div class="tg-card" id="tg-providers-card" style="margin-bottom: 20px;">
+                        <div class="tg-card-header">
+                            <div class="tg-card-title">
+                                <span>🔑</span> External Intelligence APIs & Aircraft Data Providers
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <span class="tg-bot-status-pill connected" id="tg-providers-status-badge">
+                                    <span class="status-dot"></span> Active
+                                </span>
+                                <button type="button" class="sky-btn primary" onclick="window.SkyAlertApp.saveProviderSettings()" style="padding: 6px 14px; font-size: 12px; font-weight: 700;">
+                                    💾 Save API Keys
+                                </button>
+                            </div>
+                        </div>
+                        <div class="tg-card-body">
+                            <div style="font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.15); border-radius: 8px; padding: 10px 14px; margin-bottom: 8px;">
+                                💡 SkyAlert uses multi-tiered enrichment for Telegram alerts and airframe profiles. Community sources (HexDB, ADSBDB, and offline reference tables) are active by default. Enter your optional commercial API keys below for live airline fleet, aircraft model, and route intelligence.
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px;">
+                                <!-- Provider 1: AirLabs -->
+                                <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                        <div>
+                                            <div style="font-weight: 700; font-size: 13.5px; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                                                <span>✈️</span> AirLabs API
+                                                <span class="tg-bot-status-pill checking" id="tg-pill-airlabs" style="font-size: 10.5px; padding: 2px 8px;">Checking...</span>
+                                            </div>
+                                            <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">
+                                                Airline fleet registration, MSN, model & routes.
+                                            </div>
+                                        </div>
+                                        <label class="tg-toggle">
+                                            <input type="checkbox" id="tg-prov-airlabs-enabled" checked>
+                                            <span class="tg-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div style="display: flex; gap: 8px; align-items: center;">
+                                        <input type="password" class="sky-input" id="tg-prov-airlabs-key" placeholder="Enter AirLabs API Key (e.g. f9da3...)" style="flex: 1; font-family: monospace; font-size: 12px;">
+                                        <button type="button" class="sky-btn" onclick="window.SkyAlertApp.toggleApiKeyVisibility('tg-prov-airlabs-key', this)" style="padding: 6px 10px; font-size: 12px;">👁️</button>
+                                        <button type="button" class="sky-btn" onclick="window.SkyAlertApp.verifyProviderKey('airlabs')" style="background: rgba(56, 189, 248, 0.1); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.25); font-size: 12px; white-space: nowrap;">⚡ Test Key</button>
+                                    </div>
+                                </div>
+
+                                <!-- Provider 2: API Ninjas -->
+                                <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                        <div>
+                                            <div style="font-weight: 700; font-size: 13.5px; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                                                <span>📐</span> API Ninjas (Aircraft Specs)
+                                                <span class="tg-bot-status-pill checking" id="tg-pill-api-ninjas" style="font-size: 10.5px; padding: 2px 8px;">Checking...</span>
+                                            </div>
+                                            <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">
+                                                Technical specs: wingspan, ceiling, cruise speed, engines.
+                                            </div>
+                                        </div>
+                                        <label class="tg-toggle">
+                                            <input type="checkbox" id="tg-prov-api-ninjas-enabled" checked>
+                                            <span class="tg-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div style="display: flex; gap: 8px; align-items: center;">
+                                        <input type="password" class="sky-input" id="tg-prov-api-ninjas-key" placeholder="Enter API Ninjas Key" style="flex: 1; font-family: monospace; font-size: 12px;">
+                                        <button type="button" class="sky-btn" onclick="window.SkyAlertApp.toggleApiKeyVisibility('tg-prov-api-ninjas-key', this)" style="padding: 6px 10px; font-size: 12px;">👁️</button>
+                                        <button type="button" class="sky-btn" onclick="window.SkyAlertApp.verifyProviderKey('api_ninjas')" style="background: rgba(56, 189, 248, 0.1); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.25); font-size: 12px; white-space: nowrap;">⚡ Test Key</button>
+                                    </div>
+                                </div>
+
+                                <!-- Provider 3: HexDB & ADSBDB Free Engines -->
+                                <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <div>
+                                            <div style="font-weight: 700; font-size: 13.5px; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                                                <span>🌐</span> HexDB.io & ADSBDB
+                                                <span class="tg-bot-status-pill connected" style="font-size: 10.5px; padding: 2px 8px;"><span class="status-dot"></span> Free & Active</span>
+                                            </div>
+                                            <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">
+                                                Open community databases for instant hex-to-registration resolution.
+                                            </div>
+                                        </div>
+                                        <label class="tg-toggle">
+                                            <input type="checkbox" id="tg-prov-hexdb-enabled" checked>
+                                            <span class="tg-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div style="margin-top: 8px; font-size: 11.5px; color: #4ade80;">
+                                        ✓ Keyless automatic failover enabled.
+                                    </div>
+                                </div>
+
+                                <!-- Provider 4: Airframes.io & SkyLink -->
+                                <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                        <div>
+                                            <div style="font-weight: 700; font-size: 13.5px; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                                                <span>📡</span> Airframes.io
+                                                <span class="tg-bot-status-pill checking" id="tg-pill-airframes" style="font-size: 10.5px; padding: 2px 8px;">Checking...</span>
+                                            </div>
+                                            <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">
+                                                Crowdsourced airframe database & ACARS registry.
+                                            </div>
+                                        </div>
+                                        <label class="tg-toggle">
+                                            <input type="checkbox" id="tg-prov-airframes-enabled" checked>
+                                            <span class="tg-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div style="display: flex; gap: 8px; align-items: center;">
+                                        <input type="password" class="sky-input" id="tg-prov-airframes-key" placeholder="Optional Airframes API Key" style="flex: 1; font-family: monospace; font-size: 12px;">
+                                        <button type="button" class="sky-btn" onclick="window.SkyAlertApp.toggleApiKeyVisibility('tg-prov-airframes-key', this)" style="padding: 6px 10px; font-size: 12px;">👁️</button>
+                                        <button type="button" class="sky-btn" onclick="window.SkyAlertApp.verifyProviderKey('airframes')" style="background: rgba(56, 189, 248, 0.1); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.25); font-size: 12px; white-space: nowrap;">⚡ Test Key</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- 3. Target Tracking & Proximity Vicinity Rules (Watchlist) -->
                     <div class="tg-card">
                         <div class="tg-card-header">
@@ -1653,8 +1771,8 @@
 </div>
 
 <!-- Scripts -->
-<script src="/static/js/radar_map.js?v=20260920-4"></script>
-<script src="/static/js/skyalert_app.js?v=20260920-4"></script>
+<script src="/static/js/radar_map.js?v=20260920-5"></script>
+<script src="/static/js/skyalert_app.js?v=20260920-5"></script>
 
 </body>
 </html>

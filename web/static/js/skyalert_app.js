@@ -2659,6 +2659,9 @@ class SkyAlertApp {
                 }
             }
 
+            // Load Provider Keys in Telegram View
+            await this.loadProviderSettings();
+
         } catch (e) {
             console.error("Error loading Telegram configuration:", e);
         }
@@ -2874,7 +2877,9 @@ class SkyAlertApp {
             });
             const data = await res.json();
             if (data.status === 'success') {
-                alert("✅ Telegram and alert tracking configuration saved successfully.");
+                // Also save any provider settings on screen
+                await this.saveProviderSettings(false);
+                alert("✅ Telegram, alert tracking, and API provider configuration saved successfully.");
                 this.verifyTelegramBotToken(false);
             } else {
                 alert(`Error saving configuration: ${data.message || 'Unknown error'}`);
@@ -3007,37 +3012,45 @@ class SkyAlertApp {
             const provs = data.providers || {};
 
             const map = {
-                'airlabs': { en: 'prov-airlabs-enabled', key: 'prov-airlabs-key', pill: 'pill-airlabs' },
-                'api_ninjas': { en: 'prov-api-ninjas-enabled', key: 'prov-api-ninjas-key', pill: 'pill-api-ninjas' },
-                'airframes': { en: 'prov-airframes-enabled', key: 'prov-airframes-key', pill: 'pill-airframes' },
-                'skylink': { en: 'prov-skylink-enabled', key: 'prov-skylink-key', pill: 'pill-skylink' },
-                'hexdb': { en: 'prov-hexdb-enabled' },
-                'adsbdb': { en: 'prov-adsbdb-enabled' }
+                'airlabs': { en: ['prov-airlabs-enabled', 'tg-prov-airlabs-enabled'], key: ['prov-airlabs-key', 'tg-prov-airlabs-key'], pill: ['pill-airlabs', 'tg-pill-airlabs'] },
+                'api_ninjas': { en: ['prov-api-ninjas-enabled', 'tg-prov-api-ninjas-enabled'], key: ['prov-api-ninjas-key', 'tg-prov-api-ninjas-key'], pill: ['pill-api-ninjas', 'tg-pill-api-ninjas'] },
+                'airframes': { en: ['prov-airframes-enabled', 'tg-prov-airframes-enabled'], key: ['prov-airframes-key', 'tg-prov-airframes-key'], pill: ['pill-airframes', 'tg-pill-airframes'] },
+                'skylink': { en: ['prov-skylink-enabled', 'tg-prov-skylink-enabled'], key: ['prov-skylink-key', 'tg-prov-skylink-key'], pill: ['pill-skylink', 'tg-pill-skylink'] },
+                'hexdb': { en: ['prov-hexdb-enabled', 'tg-prov-hexdb-enabled'] },
+                'adsbdb': { en: ['prov-adsbdb-enabled', 'tg-prov-adsbdb-enabled'] }
             };
 
             for (const [pName, pConfig] of Object.entries(provs)) {
                 const elMap = map[pName];
                 if (!elMap) continue;
 
-                const enEl = document.getElementById(elMap.en);
-                if (enEl) enEl.checked = pConfig.enabled !== false;
+                if (elMap.en) {
+                    elMap.en.forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.checked = pConfig.enabled !== false;
+                    });
+                }
 
                 if (elMap.key) {
-                    const keyEl = document.getElementById(elMap.key);
-                    if (keyEl) keyEl.value = pConfig.api_key || '';
+                    elMap.key.forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.value = pConfig.api_key || '';
+                    });
                 }
 
                 if (elMap.pill) {
-                    const pillEl = document.getElementById(elMap.pill);
-                    if (pillEl) {
-                        if (pConfig.configured) {
-                            pillEl.className = 'tg-bot-status-pill connected';
-                            pillEl.innerHTML = '<span class="status-dot"></span> Key Configured';
-                        } else {
-                            pillEl.className = 'tg-bot-status-pill disconnected';
-                            pillEl.innerHTML = '<span class="status-dot"></span> No Key';
+                    elMap.pill.forEach(id => {
+                        const pillEl = document.getElementById(id);
+                        if (pillEl) {
+                            if (pConfig.configured) {
+                                pillEl.className = 'tg-bot-status-pill connected';
+                                pillEl.innerHTML = '<span class="status-dot"></span> Key Configured';
+                            } else {
+                                pillEl.className = 'tg-bot-status-pill disconnected';
+                                pillEl.innerHTML = '<span class="status-dot"></span> No Key';
+                            }
                         }
-                    }
+                    });
                 }
             }
         } catch (e) {
@@ -3045,30 +3058,50 @@ class SkyAlertApp {
         }
     }
 
-    async saveProviderSettings() {
+    async saveProviderSettings(showAlert = true) {
+        const getVal = (ids) => {
+            for (const id of ids) {
+                const el = document.getElementById(id);
+                if (el && el.value.trim()) return el.value.trim();
+            }
+            for (const id of ids) {
+                const el = document.getElementById(id);
+                if (el) return el.value.trim();
+            }
+            return '';
+        };
+
+        const isChecked = (ids, def = true) => {
+            for (const id of ids) {
+                const el = document.getElementById(id);
+                if (el) return el.checked;
+            }
+            return def;
+        };
+
         const payload = {
             providers: {
                 airlabs: {
-                    enabled: document.getElementById('prov-airlabs-enabled')?.checked ?? true,
-                    api_key: document.getElementById('prov-airlabs-key')?.value?.trim() ?? ''
+                    enabled: isChecked(['tg-prov-airlabs-enabled', 'prov-airlabs-enabled']),
+                    api_key: getVal(['tg-prov-airlabs-key', 'prov-airlabs-key'])
                 },
                 api_ninjas: {
-                    enabled: document.getElementById('prov-api-ninjas-enabled')?.checked ?? true,
-                    api_key: document.getElementById('prov-api-ninjas-key')?.value?.trim() ?? ''
+                    enabled: isChecked(['tg-prov-api-ninjas-enabled', 'prov-api-ninjas-enabled']),
+                    api_key: getVal(['tg-prov-api-ninjas-key', 'prov-api-ninjas-key'])
                 },
                 airframes: {
-                    enabled: document.getElementById('prov-airframes-enabled')?.checked ?? true,
-                    api_key: document.getElementById('prov-airframes-key')?.value?.trim() ?? ''
+                    enabled: isChecked(['tg-prov-airframes-enabled', 'prov-airframes-enabled']),
+                    api_key: getVal(['tg-prov-airframes-key', 'prov-airframes-key'])
                 },
                 skylink: {
-                    enabled: document.getElementById('prov-skylink-enabled')?.checked ?? false,
-                    api_key: document.getElementById('prov-skylink-key')?.value?.trim() ?? ''
+                    enabled: isChecked(['tg-prov-skylink-enabled', 'prov-skylink-enabled'], false),
+                    api_key: getVal(['tg-prov-skylink-key', 'prov-skylink-key'])
                 },
                 hexdb: {
-                    enabled: document.getElementById('prov-hexdb-enabled')?.checked ?? true
+                    enabled: isChecked(['tg-prov-hexdb-enabled', 'prov-hexdb-enabled'])
                 },
                 adsbdb: {
-                    enabled: document.getElementById('prov-adsbdb-enabled')?.checked ?? true
+                    enabled: isChecked(['tg-prov-adsbdb-enabled', 'prov-adsbdb-enabled'])
                 }
             }
         };
@@ -3081,44 +3114,55 @@ class SkyAlertApp {
             });
             const data = await res.json();
             if (data.status === 'success') {
-                alert("✅ API Provider credentials and integration settings saved successfully.");
+                if (showAlert) alert("✅ API Provider credentials and integration settings saved successfully.");
                 this.loadProviderSettings();
             } else {
-                alert(`Error saving provider settings: ${data.message || 'Unknown error'}`);
+                if (showAlert) alert(`Error saving provider settings: ${data.message || 'Unknown error'}`);
             }
         } catch (e) {
             console.error("Save provider error:", e);
-            alert("Failed to save provider configuration to backend.");
+            if (showAlert) alert("Failed to save provider configuration to backend.");
         }
     }
 
     async verifyProviderKey(providerName) {
         const keyMap = {
-            'airlabs': 'prov-airlabs-key',
-            'api_ninjas': 'prov-api-ninjas-key',
-            'airframes': 'prov-airframes-key',
-            'skylink': 'prov-skylink-key'
+            'airlabs': ['tg-prov-airlabs-key', 'prov-airlabs-key'],
+            'api_ninjas': ['tg-prov-api-ninjas-key', 'prov-api-ninjas-key'],
+            'airframes': ['tg-prov-airframes-key', 'prov-airframes-key'],
+            'skylink': ['tg-prov-skylink-key', 'prov-skylink-key']
         };
         const pillMap = {
-            'airlabs': 'pill-airlabs',
-            'api_ninjas': 'pill-api-ninjas',
-            'airframes': 'pill-airframes',
-            'skylink': 'pill-skylink'
+            'airlabs': ['tg-pill-airlabs', 'pill-airlabs'],
+            'api_ninjas': ['tg-pill-api-ninjas', 'pill-api-ninjas'],
+            'airframes': ['tg-pill-airframes', 'pill-airframes'],
+            'skylink': ['tg-pill-skylink', 'pill-skylink']
         };
 
-        const inputEl = document.getElementById(keyMap[providerName]);
-        const pillEl = document.getElementById(pillMap[providerName]);
-        const apiKey = inputEl ? inputEl.value.trim() : '';
+        const keyIds = keyMap[providerName] || [];
+        const pillIds = pillMap[providerName] || [];
+
+        let apiKey = '';
+        for (const id of keyIds) {
+            const el = document.getElementById(id);
+            if (el && el.value.trim()) {
+                apiKey = el.value.trim();
+                break;
+            }
+        }
 
         if (!apiKey && !['hexdb', 'adsbdb'].includes(providerName)) {
             alert(`Please enter an API key for ${providerName} to test.`);
             return;
         }
 
-        if (pillEl) {
-            pillEl.className = 'tg-bot-status-pill checking';
-            pillEl.innerHTML = '<span class="status-dot"></span> Testing...';
-        }
+        pillIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.className = 'tg-bot-status-pill checking';
+                el.innerHTML = '<span class="status-dot"></span> Testing...';
+            }
+        });
 
         try {
             const res = await fetch('/api/providers/verify', {
@@ -3128,23 +3172,32 @@ class SkyAlertApp {
             });
             const data = await res.json();
             if (data.ok) {
-                if (pillEl) {
-                    pillEl.className = 'tg-bot-status-pill connected';
-                    pillEl.innerHTML = '<span class="status-dot"></span> 🟢 Verified';
-                }
+                pillIds.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) {
+                        el.className = 'tg-bot-status-pill connected';
+                        el.innerHTML = '<span class="status-dot"></span> 🟢 Verified';
+                    }
+                });
                 alert(`✅ Verification Succeeded:\n${data.message}`);
             } else {
-                if (pillEl) {
-                    pillEl.className = 'tg-bot-status-pill disconnected';
-                    pillEl.innerHTML = '<span class="status-dot"></span> 🔴 Failed';
-                }
+                pillIds.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) {
+                        el.className = 'tg-bot-status-pill disconnected';
+                        el.innerHTML = '<span class="status-dot"></span> 🔴 Failed';
+                    }
+                });
                 alert(`❌ Verification Failed:\n${data.error || 'Could not validate key.'}`);
             }
         } catch (e) {
-            if (pillEl) {
-                pillEl.className = 'tg-bot-status-pill disconnected';
-                pillEl.innerHTML = '<span class="status-dot"></span> Error';
-            }
+            pillIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.className = 'tg-bot-status-pill disconnected';
+                    el.innerHTML = '<span class="status-dot"></span> Error';
+                }
+            });
             alert(`Network error testing ${providerName}: ${e}`);
         }
     }

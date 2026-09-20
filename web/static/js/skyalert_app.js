@@ -2659,9 +2659,6 @@ class SkyAlertApp {
                 }
             }
 
-            // Load Provider Keys in Telegram View
-            await this.loadProviderSettings();
-
         } catch (e) {
             console.error("Error loading Telegram configuration:", e);
         }
@@ -2877,9 +2874,7 @@ class SkyAlertApp {
             });
             const data = await res.json();
             if (data.status === 'success') {
-                // Also save any provider settings on screen
-                await this.saveProviderSettings(false);
-                alert("✅ Telegram, alert tracking, and API provider configuration saved successfully.");
+                alert("✅ Telegram and alert tracking configuration saved successfully.");
                 this.verifyTelegramBotToken(false);
             } else {
                 alert(`Error saving configuration: ${data.message || 'Unknown error'}`);

@@ -213,7 +213,8 @@ class RuleEngine:
         # ------------------------------------------------
 
         geofence_cfg = self.config.get("geofence", {})
-        if geofence_cfg.get("enabled"):
+        geofence_enabled = self.config.get("alerts", {}).get("geofence", True) and geofence_cfg.get("enabled", False)
+        if geofence_enabled:
             c_lat = geofence_cfg.get("latitude")
             c_lon = geofence_cfg.get("longitude")
             radius = geofence_cfg.get("radius_km", 50)

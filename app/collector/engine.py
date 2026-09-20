@@ -113,6 +113,31 @@ class UnifiedCollector:
     """
 
     def __init__(self):
+        self._load_settings()
+
+        # In-Memory Active Sessions State
+        self.active_sessions: Dict[str, ActiveSession] = {}
+        self.client: Optional[httpx.AsyncClient] = None
+        self.is_running = False
+        self.last_cleanup_time = datetime.now(timezone.utc)
+
+        # Global per-aircraft alert cooldown: (hex, rule_key) -> last_notified datetime
+        # Prevents duplicate Telegram messages across session boundaries (45-min window)
+        self.ALERT_COOLDOWN_SECONDS = 45 * 60  # 45 minutes
+        self._alert_cooldown: Dict[Tuple[str, str], datetime] = {}
+
+    def reload_config(self):
+        """Dynamically reloads configuration, rule engine, and Telegram notifier at runtime."""
+        self._load_settings()
+        tg_status = "Enabled" if (self.telegram and self.telegram.token and self.telegram.chat_id) else "Disabled"
+        logger.info(
+            f"🔄 Collector configuration reloaded dynamically | "
+            f"Telegram: {tg_status} | "
+            f"Poll: {self.poll_interval}s | "
+            f"Station: ({self.station_lat:.4f}, {self.station_lon:.4f})"
+        )
+
+    def _load_settings(self):
         self.config = load_config()
         self.url = self.config.get("tar1090", {}).get("url") or "http://localhost/tar1090/data/aircraft.json"
         self.poll_interval = int(self.config.get("general", {}).get("poll_interval", 5))
@@ -141,17 +166,6 @@ class UnifiedCollector:
                 photo_enabled=tg_cfg.get("photo_enabled", True)
             )
         self.notifier = Notifier(self.telegram)
-
-        # In-Memory Active Sessions State
-        self.active_sessions: Dict[str, ActiveSession] = {}
-        self.client: Optional[httpx.AsyncClient] = None
-        self.is_running = False
-        self.last_cleanup_time = datetime.now(timezone.utc)
-
-        # Global per-aircraft alert cooldown: (hex, rule_key) -> last_notified datetime
-        # Prevents duplicate Telegram messages across session boundaries (45-min window)
-        self.ALERT_COOLDOWN_SECONDS = 45 * 60  # 45 minutes
-        self._alert_cooldown: Dict[Tuple[str, str], datetime] = {}
 
     async def start(self):
         """Starts the unified collector background loop."""

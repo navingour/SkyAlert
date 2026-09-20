@@ -27,5 +27,11 @@ class ConfigManager:
                 sort_keys=False
             )
 
+        try:
+            from app.collector.engine import collector_engine
+            collector_engine.reload_config()
+        except Exception:
+            pass
+
 
 config_manager = ConfigManager()

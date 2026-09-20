@@ -1,3 +1,4 @@
+import html
 from app.logger import logger
 from datetime import datetime
 from app.event_database import event_db
@@ -16,15 +17,15 @@ class Notifier:
         # Aircraft information
         # -------------------------------------------------
 
-        flight = (plane.get("flight") or "").strip() or "N/A"
-        registration = plane.get("registration") or "N/A"
-        aircraft = plane.get("description") or plane.get("model") or "Unknown Model"
-        aircraft_type = plane.get("aircraft_type") or plane.get("type") or "N/A"
-        manufacturer = plane.get("manufacturer") or ""
-        owner = plane.get("owner") or special.get("operator") or ""
+        flight = html.escape((plane.get("flight") or "").strip() or "N/A")
+        registration = html.escape(plane.get("registration") or "N/A")
+        aircraft = html.escape(plane.get("description") or plane.get("model") or "Unknown Model")
+        aircraft_type = html.escape(plane.get("aircraft_type") or plane.get("type") or "N/A")
+        manufacturer = html.escape(plane.get("manufacturer") or "")
+        owner = html.escape(plane.get("owner") or special.get("operator") or "")
 
-        hexcode = str(plane.get("hex", "")).strip().upper()
-        squawk = str(plane.get("squawk") or "----")
+        hexcode = html.escape(str(plane.get("hex", "")).strip().upper())
+        squawk = html.escape(str(plane.get("squawk") or "----"))
 
         alt_val = plane.get("alt_baro")
         altitude = "N/A" if alt_val is None else f"{alt_val:,} ft"
@@ -38,16 +39,16 @@ class Notifier:
         gs_val = plane.get("gs")
         speed = "N/A" if gs_val is None else f"{round(gs_val * 1.852)} km/h ({round(gs_val)} kt)"
 
-        operator = special.get("operator") or plane.get("operator") or ""
-        campaign = special.get("campaign") or ""
-        category = special.get("category") or ""
+        operator = html.escape(special.get("operator") or plane.get("operator") or "")
+        campaign = html.escape(special.get("campaign") or "")
+        category = html.escape(special.get("category") or "")
         photo_url = plane.get("image_url") or plane.get("photo_url") or special.get("image_url")
 
         tags = []
         for key in ("tag1", "tag2", "tag3"):
             value = special.get(key, "").strip()
             if value:
-                tags.append(value)
+                tags.append(html.escape(value))
 
         # -------------------------------------------------
         # Build HTML Telegram Message
